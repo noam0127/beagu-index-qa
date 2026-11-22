@@ -83,6 +83,9 @@ jobs:
           name: stage40-qa-hosted-a-first
           path: site-a
 
+      - name: Allow artifact A to appear in GitHub Actions metadata
+        run: sleep 8
+
       - name: Deploy baseline A to QA Pages
         uses: actions/deploy-pages@v4
         with:
@@ -97,6 +100,9 @@ jobs:
         with:
           name: stage40-qa-hosted-b-preview
           path: site-b
+
+      - name: Allow artifact B to appear in GitHub Actions metadata
+        run: sleep 8
 
       - name: Deploy candidate B to QA Pages
         uses: actions/deploy-pages@v4
@@ -114,6 +120,10 @@ jobs:
         with:
           name: stage40-qa-hosted-a-restore
           path: site-a
+
+      - name: Allow restore artifact to appear in Actions metadata
+        if: always() && steps.restore_upload.outcome == 'success'
+        run: sleep 8
 
       - name: Restore A to QA Pages even after failed B attempt
         if: always() && steps.restore_upload.outcome == 'success'
