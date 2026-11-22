@@ -68,8 +68,15 @@ jobs:
           print('PASS exact RC, local-only and isolated staging backend')
           PY
 
-      - name: Verify Lv3, account ownership, MFA/role and existing UI contracts
+      - name: Materialize verified immutable RC worktree for regressions
         working-directory: source
+        shell: bash
+        run: |
+          git worktree add --detach ../rc-contracts 5c95aadad971901a8222f83c52e93bf901a3aeb7
+          test "$(git -C ../rc-contracts rev-parse HEAD)" = 5c95aadad971901a8222f83c52e93bf901a3aeb7
+
+      - name: Verify Lv3, account ownership, MFA/role and existing UI contracts
+        working-directory: rc-contracts
         shell: bash
         run: |
           set -euo pipefail
