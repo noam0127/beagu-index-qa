@@ -1,4 +1,4 @@
-name: Stage40 real staging 2026 HTTP release privacy levels — ONE SHOT
+name: Stage40 real 2026 privacy HTTP 12-case historical evidence — read only
 
 on:
   push:
@@ -9,51 +9,25 @@ on:
 
 permissions:
   contents: read
-  id-token: write
-
-concurrency:
-  group: stage40-staging-privacy-http
-  cancel-in-progress: false
 
 jobs:
-  signed-read-release:
-    if: github.repository == 'noam0127/beagu-index-qa' && github.ref == 'refs/heads/main'
+  assert-retired:
+    if: github.repository == 'noam0127/beagu-index-qa'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Signed OIDC staging-only real HTTP privacy test, auto cleanup
+      - name: Isolated staging live-privacy fixture is permanently disabled
         shell: bash
         run: |
-          node <<'JS'
-          const assert=require('node:assert/strict');
-          (async()=>{
-            const raw=process.env.ACTIONS_ID_TOKEN_REQUEST_URL;
-            const token=process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
-            assert.ok(raw&&token,'GitHub signed identity mandatory');
-            const issuer=await fetch(raw+(raw.includes('?')?'&':'?')+
-              'audience=beagu-stage40-real-privacy-qa',{
-               headers:{Authorization:'Bearer '+token},
-               signal:AbortSignal.timeout(20000)});
-            assert.equal(issuer.status,200);
-            const signed=(await issuer.json()).value;
-            assert.ok(typeof signed==='string'&&signed.length>100);
-            const result=await fetch(
-              'https://ycwuugggqbunlbwuzvbx.supabase.co/functions/v1/beagu-stage40-real-privacy-http-once',{
-              method:'POST',redirect:'manual',
-              headers:{Authorization:'Bearer '+signed,'Content-Type':'application/json'},
-              body:'{}',signal:AbortSignal.timeout(135000)});
-            const payload=await result.json().catch(()=>({}));
-            const safe={http:result.status,status:payload.status||payload.error||'UNKNOWN',
-              checks:payload.checks_passed??null,cleaned:payload.cleanup_ok??null};
-            console.log('STAGE40_STAGING_PRIVACY',JSON.stringify(safe));
-            assert.equal(result.status,200,'Staging real HTTP privacy test rejected');
-            assert.equal(payload.status,'PASS');
-            assert.equal(payload.checks_passed,12);
-            assert.equal(payload.cleanup_ok,true);
-            console.log('PASS: actual staging level-api HTTP 12 policy checks, no production requests, synthetic rows deleted');
-          })().catch(e=>{console.error('STAGE40_STAGING_PRIVACY_BLOCKED: '+String(e.message).slice(0,150));process.exitCode=1});
-          JS
-      - name: No real identities or production releases created
-        if: always()
-        run: |
-          echo 'Synthetic school TST9041, no Auth user, no real respondent data, temporary isolated project.'
+          set -euo pipefail
+          status=$(curl -sS --max-time 20 -o /tmp/retired-privacy.json -w '%{http_code}' -H 'Content-Type: application/json' -d '{}' 'https://ycwuugggqbunlbwuzvbx.supabase.co/functions/v1/beagu-stage40-real-privacy-http-once')
+          test "$status" = 410
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          result=json.loads(Path('/tmp/retired-privacy.json').read_text())
+          assert result['status']=='DISABLED'
+          assert result['reason']=='STAGE40_REAL_PRIVACY_HTTP_PASSED_RETIRED'
+          print('PASS: original staging HTTP 12/12 evidence #45057131311 retained; provisioning retired')
+          PY
+          rm -f /tmp/retired-privacy.json
