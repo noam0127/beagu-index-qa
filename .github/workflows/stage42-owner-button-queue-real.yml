@@ -60,6 +60,12 @@ jobs:
             git fetch --no-tags origin +refs/heads/release/v1.1.0-rc.1:refs/remotes/origin/release/v1.1.0-rc.1
             test "$(git rev-parse refs/remotes/origin/release/v1.1.0-rc.1)" = 5c95aadad971901a8222f83c52e93bf901a3aeb7
             python3 scripts/release-manager/build-offline-rc-bundle.py
+            # PRIVATE LOCALHOST-ONLY review copy permits actual staging Auth/MFA.
+            # NEVER upload this tree to Pages; public QA uses sanitized clone.
+            cp -a _preview_standalone_site ../site-auth-local
+            test ! -e ../site-auth-local/CNAME
+            grep -q 'beagu-admin-access' ../site-auth-local/js/beagu-admin-access-v1.js
+            if grep -q 'stage38-cdn-static-guard' ../site-auth-local/admin.html; then exit 1; fi
             python3 scripts/release-manager/build-stage38-static-mirror.py
             python3 ../qa/scripts/patch_participation_qa.py _preview_standalone_site
           )
@@ -91,7 +97,7 @@ jobs:
         shell: bash
         env:
           NODE_PATH: ${{ github.workspace }}/qa/.stage42-deps/node_modules
-          STAGE42_STATIC_DIR: source/_preview_standalone_site
+          STAGE42_STATIC_DIR: site-auth-local
           STAGE42_FIXTURE_FILE: qa/.stage42-qa-fixture.json
         run: |
           set -euo pipefail
