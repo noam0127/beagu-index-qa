@@ -20,7 +20,7 @@ jobs:
           python3 - <<'PY'
           import json,urllib.request,urllib.error
           base="https://noam0127.github.io/beagu-index-qa/"
-          with urllib.request.urlopen(base+"stage40-remote-state.json",timeout=20) as r:
+          with urllib.request.urlopen(base+"qa-stage40-remote-state.json",timeout=20) as r:
               state=json.load(r)
               assert state["stage"]=="A"
               assert state["login_enabled"] is False
