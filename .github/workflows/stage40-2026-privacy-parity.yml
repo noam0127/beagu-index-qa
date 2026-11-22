@@ -57,4 +57,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          psql -X -v ON_ERROR_STOP=1 -Atqc "select case when (select count(*) from auth.users)=0 and (select count(*) from public.beagu_2026_results_snapshot)=0 and (select count(*) from beagu_private.beagu_2026_publication_basis_review)=0 and (select count(*) from public.schools where school_id='TST9090')=0 and not has_function_privilege('anon','public.beagu_2026_lv2_released_question_results(text)','EXECUTE') and not has_function_privilege('authenticated','public.beagu_2026_released_question_results(text)','EXECUTE') then 'PASS: rollback and RPC grants' else (1/0)::text end"
+          result=$(psql -X -v ON_ERROR_STOP=1 -Atqc "select case when (select count(*) from auth.users)=0 and (select count(*) from public.beagu_2026_results_snapshot)=0 and (select count(*) from beagu_private.beagu_2026_publication_basis_review)=0 and (select count(*) from public.schools where school_id='TST9090')=0 and not has_function_privilege('anon','public.beagu_2026_lv2_released_question_results(text)','EXECUTE') and not has_function_privilege('authenticated','public.beagu_2026_released_question_results(text)','EXECUTE') then 'PASS: rollback and RPC grants' else 'FAIL: rollback or RPC grants' end")
+          test "$result" = "PASS: rollback and RPC grants"
+          echo "$result"
