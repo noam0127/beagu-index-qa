@@ -58,7 +58,7 @@ jobs:
           staging='ycwuugggqbunlbwuzvbx'
           prod='snvzwrexuqavnfvzgxqj'
           test "$staging" != "$prod"
-          url="https://\${staging}.supabase.co/functions/v1/beagu-admin-members-v1"
+          url="https://${staging}.supabase.co/functions/v1/beagu-admin-members-v1"
           for scenario in anonymous invalid_token; do
             if [ "$scenario" = 'anonymous' ]; then
               status=$(curl -sS --max-time 20 -o /tmp/qa-denied.json -w '%{http_code}' \
