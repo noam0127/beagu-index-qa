@@ -1,0 +1,62 @@
+name: Stage40 real earned Lv2→GoTrue signup→device→Lv3→revoke (QA ONE SHOT)
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/stage40-lv3-joined-real-once.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: qa-stage40-earned-lv3-joined-real-once
+  cancel-in-progress: false
+jobs:
+  earned-real-auth-chain:
+    if: github.repository == 'noam0127/beagu-index-qa'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 9
+    steps:
+      - name: Deny unauthenticated QA-only API invocation
+        shell: bash
+        run: |
+          set -euo pipefail
+          api='https://ycwuugggqbunlbwuzvbx.supabase.co/functions/v1/beagu-stage40-lv3-joined-real-once'
+          for attempt in 1 2 3 4 5; do
+            status=$(curl -sS --max-time 25 -o /tmp/qa-noauth.json -w '%{http_code}' -X POST "$api")
+            echo "Anonymous request status: $status"
+            if [[ "$status" == 401 || "$status" == 403 ]]; then
+              echo 'PASS: unsigned requests denied without state mutation'
+              exit 0
+            fi
+            if [[ "$status" != 404 ]]; then exit 1; fi
+            sleep 5
+          done
+          exit 1
+      - name: Run REAL staging Auth and server Lv3 E2E with signed QA OIDC
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,json,urllib.request,urllib.parse,urllib.error
+          url=os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
+          url+=("&" if "?" in url else "?")+"audience="+urllib.parse.quote("beagu-stage40-joined-lv3-qa")
+          with urllib.request.urlopen(urllib.request.Request(url,headers={
+             "Authorization":"Bearer "+os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]
+          }),timeout=25) as res:
+              jwt=json.load(res)["value"]
+          api='https://ycwuugggqbunlbwuzvbx.supabase.co/functions/v1/beagu-stage40-lv3-joined-real-once'
+          req=urllib.request.Request(api,method="POST",data=b"{}",headers={
+              "Content-Type":"application/json","Authorization":"Bearer "+jwt})
+          try:
+              with urllib.request.urlopen(req,timeout=125) as res:
+                  body=json.load(res);http=res.status
+          except urllib.error.HTTPError as err:
+              body=json.loads(err.read().decode("utf8"));http=err.code
+          safe={key:value for key,value in body.items() if key in
+                ("status","checks_passed","reason","cleanup_ok","scope","production_untouched")}
+          print("Staging hosted chain",http,json.dumps(safe,ensure_ascii=False))
+          assert http==200 and body.get("status")=="PASS","Hosted chain must pass"
+          assert body.get("checks_passed")==19 and body.get("cleanup_ok") is True
+          assert body.get("production_untouched") is True
+          PY
