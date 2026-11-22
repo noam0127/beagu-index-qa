@@ -1,0 +1,89 @@
+name: Stage39 hosted Chromium and staging negative-path security (NO AUTH)
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/stage39-qa-hosted-browser.yml'
+      - 'tests/stage39-qa-hosted-browser.cjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hosted-chromium:
+    if: github.repository == 'noam0127/beagu-index-qa'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout isolated QA repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Install fixed-version Chromium test runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --prefix .qa-browser-deps --no-save --no-package-lock playwright@1.56.1
+          .qa-browser-deps/node_modules/.bin/playwright install --with-deps chromium
+
+      - name: Run hosted QA desktop/mobile browser regression
+        shell: bash
+        env:
+          NODE_PATH: .qa-browser-deps/node_modules
+        run: |
+          set -euo pipefail
+          node --check tests/stage39-qa-hosted-browser.cjs
+          node tests/stage39-qa-hosted-browser.cjs
+
+      - name: Upload non-sensitive screenshot and test result evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage39-qa-browser-no-auth-evidence
+          path: artifacts/stage39-qa-hosted-browser/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  staging-admin-deny:
+    if: github.repository == 'noam0127/beagu-index-qa'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - name: Confirm staging admin API denies anonymous and fake-token requests
+        shell: bash
+        run: |
+          set -euo pipefail
+          staging='ycwuugggqbunlbwuzvbx'
+          prod='snvzwrexuqavnfvzgxqj'
+          test "$staging" != "$prod"
+          url="https://\${staging}.supabase.co/functions/v1/beagu-admin-members-v1"
+          for scenario in anonymous invalid_token; do
+            if [ "$scenario" = 'anonymous' ]; then
+              status=$(curl -sS --max-time 20 -o /tmp/qa-denied.json -w '%{http_code}' \
+                -X POST -H 'Content-Type: application/json' \
+                -d '{"action":"list"}' "$url")
+            else
+              status=$(curl -sS --max-time 20 -o /tmp/qa-denied.json -w '%{http_code}' \
+                -X POST -H 'Content-Type: application/json' \
+                -H 'Authorization: Bearer invalid.stage39.no-auth' \
+                -d '{"action":"list"}' "$url")
+            fi
+            case "$status" in
+              401|403) echo "PASS: $scenario request denied HTTP $status" ;;
+              *) echo "::error::Unexpected admin access response HTTP $status"; exit 1 ;;
+            esac
+            python3 - <<'PY'
+          import json
+          from pathlib import Path
+          s=Path('/tmp/qa-denied.json').read_text(encoding='utf-8')
+          try: payload=json.loads(s)
+          except ValueError: payload={}
+          assert isinstance(payload,dict)
+          forbidden={'members','users','phone','email','data','member_list','admin_token','access_token'}
+          assert not forbidden.intersection(payload), 'Admin response exposed confidential fields'
+          PY
+          done
+          rm -f /tmp/qa-denied.json
+          echo 'PASS: tested ONLY isolated staging unauthorized endpoints; no account or DB writes'
