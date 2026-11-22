@@ -14,7 +14,7 @@ const reply=(status:number,value:Record<string,unknown>)=>new Response(JSON.stri
   status,headers:{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store",
     "X-Content-Type-Options":"nosniff","Referrer-Policy":"no-referrer"}
 });
-const secret=()=>Array.from(crypto.getRandomValues(new Uint8Array(48)),b=>b.toString(16).padStart(2,"0")).join("");
+const secret=()=>Array.from(crypto.getRandomValues(new Uint8Array(32)),b=>b.toString(16).padStart(2,"0")).join("");
 const dbUrl=Deno.env.get("SUPABASE_URL")||"";
 const dbKey=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")||"";
 Deno.serve(async(req:Request)=>{
