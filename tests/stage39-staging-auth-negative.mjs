@@ -45,8 +45,11 @@ async function post(slug,{origin,auth,body={action:'list'}}={}) {
   try {json=JSON.parse(raw)} catch {};
   if (!json || typeof json!=='object' || Array.isArray(json)) json={};
   forbidSecret(json,slug);
-  assert.equal(response.headers.get('set-cookie'),null,
-    slug+' unexpectedly set cookies');
+  // Cloudflare can issue an infrastructure __cf_bm cookie. Never assert
+  // that *all* cookies are absent; only reject session/access-token cookies.
+  const cookie=response.headers.get('set-cookie')||'';
+  assert.ok(!/(?:^|[,;]\\s*)(?:access_token|refresh_token|sb-[^=;]+-auth-token|supabase-auth-token)=/i.test(cookie),
+    slug+' unexpectedly set an authentication cookie');
   return {status:response.status,json,headers:response.headers};
 }
 async function check({label,slug,origin,auth,accepted,body}) {
