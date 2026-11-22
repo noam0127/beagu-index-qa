@@ -1,0 +1,57 @@
+name: Stage40 real GoTrue email confirmation by signup token (QA ONE SHOT)
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/stage40-gotrue-confirmation-once.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: stage40-gotrue-confirmation-once
+  cancel-in-progress: false
+jobs:
+  real-gotrue:
+    if: github.repository == 'noam0127/beagu-index-qa'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Signed QA verifier rejects anonymous requests before running
+        shell: bash
+        run: |
+          set -euo pipefail
+          api='https://ycwuugggqbunlbwuzvbx.supabase.co/functions/v1/beagu-stage40-gotrue-confirm-once'
+          http=$(curl --max-time 25 -sS -o /tmp/stage40-denial.json -w '%{http_code}' -X POST "$api")
+          test "$http" = 401
+          echo 'PASS: unauthenticated account-verification test denied'
+      - name: Run actual hosted GoTrue token confirmation and login; never print credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,urllib.request,urllib.parse,urllib.error
+          auth_url=os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
+          auth_url+=("&" if "?" in auth_url else "?")+"audience="+urllib.parse.quote("beagu-stage40-gotrue-confirm")
+          request=urllib.request.Request(auth_url,headers={
+           "Authorization":"Bearer "+os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]})
+          with urllib.request.urlopen(request,timeout=20) as res:
+              oidc=json.load(res)["value"]
+          api="https://ycwuugggqbunlbwuzvbx.supabase.co/functions/v1/beagu-stage40-gotrue-confirm-once"
+          req=urllib.request.Request(api,method="POST",data=b"{}",headers={
+           "Authorization":"Bearer "+oidc,
+           "Content-Type":"application/json"})
+          try:
+              with urllib.request.urlopen(req,timeout=90) as res:
+                  body=json.load(res)
+                  code=res.status
+          except urllib.error.HTTPError as e:
+              body=json.loads(e.read().decode("utf8"))
+              code=e.code
+          # Never log tokens, emails, passwords, or confirmation links.
+          safe={k:v for k,v in body.items() if k in ("status","checks_passed","reason","cleanup_ok","scope","production_untouched")}
+          print("GoTrue QA result",code,json.dumps(safe,ensure_ascii=False))
+          assert code==200 and body.get("status")=="PASS"
+          assert body.get("checks_passed")==8 and body.get("cleanup_ok") is True
+          assert body.get("production_untouched") is True
+          PY
