@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "tests/stage40-release-buttons-simulator.cjs"
+      - "tests/stage40-challenge-member-ui.cjs"
       - ".github/workflows/stage40-release-ui-simulation.yml"
   workflow_dispatch:
 
@@ -43,6 +44,8 @@ jobs:
           test "$(git -C rc rev-parse HEAD)" = 5c95aadad971901a8222f83c52e93bf901a3aeb7
           node --check tests/stage40-release-buttons-simulator.cjs
           node tests/stage40-release-buttons-simulator.cjs
+          node --check tests/stage40-challenge-member-ui.cjs
+          node tests/stage40-challenge-member-ui.cjs
       - name: Archive non-sensitive UI state evidence
         if: always()
         uses: actions/upload-artifact@v4
