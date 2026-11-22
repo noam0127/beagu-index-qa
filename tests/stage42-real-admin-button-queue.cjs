@@ -12,6 +12,7 @@ const {spawn}=require("node:child_process");
 const {chromium}=require("playwright");
 const REF="ycwuugggqbunlbwuzvbx",PROD="snvzwrexuqavnfvzgxqj";
 const LOCAL="http://127.0.0.1:38738";
+let phase="init";
 const root=path.resolve(process.env.STAGE42_STATIC_DIR||"source/_preview_standalone_site");
 const fixtureFile=process.env.STAGE42_FIXTURE_FILE||"qa/.stage42-qa-fixture.json";
 function totpSeed(seed){
@@ -32,10 +33,12 @@ function totp(seed){
  return String((h.readUInt32BE(o)&0x7fffffff)%1000000).padStart(6,"0");
 }
 async function main(){
+ phase="load_fixture";
  const f=JSON.parse(fs.readFileSync(fixtureFile,"utf8"));
  assert.match(f.admin_email,/^qa-stage42-[a-f0-9]{32}@example\.invalid$/);
  assert.ok(f.admin_password.length>=65);
  assert.ok(fs.existsSync(path.join(root,"admin-updates.html")));
+ phase="manifest";
  const m=JSON.parse(fs.readFileSync(path.join(root,"stage38-release-manifest.json"),"utf8"));
  assert.equal(m.supabase_project_ref,REF);
  assert.equal(m.source_sha,"5c95aadad971901a8222f83c52e93bf901a3aeb7");
@@ -51,6 +54,7 @@ async function main(){
    }catch{}
    await new Promise(r=>setTimeout(r,250))
   }
+  phase="http_ready";
   assert(ready,"local QA static host did not start");
   browser=await chromium.launch({headless:true,args:["--no-sandbox"]});
   const context=await browser.newContext({serviceWorkers:"block"});
@@ -71,17 +75,21 @@ async function main(){
    }
    return route.continue();
   });
+  phase="admin_login_page";
   await page.goto(LOCAL+"/admin.html",{waitUntil:"domcontentloaded",timeout:35000});
+  phase="admin_login_form";
   await page.locator("#adminLogin").waitFor({state:"visible",timeout:20000});
   await page.locator("#adminEmail").fill(f.admin_email);
   await page.locator("#adminPassword").fill(f.admin_password);
   await page.locator("#adminLoginForm button[type=submit]").click();
+  phase="password_login_to_mfa";
   await page.locator("#adminMfa").waitFor({state:"visible",timeout:25000});
   assert.equal(await page.locator("#adminDashboard").isVisible(),false);
   console.log("PASS actual pinned RC browser password sign-in AAL1, MFA form visible");
   const enrollment=page.waitForResponse(resp=>
     resp.url().includes("/auth/v1/factors")&&resp.request().method()==="POST"&&resp.status()===200,
     {timeout:20000});
+  phase="mfa_enrollment";
   await page.locator("#adminEnroll").click();
   const factor=await (await enrollment).json();
   const seed=factor?.totp?.secret||"";
@@ -96,11 +104,14 @@ async function main(){
     elevated=true;
    }catch{}
   }
+  phase="totp_elevation";
   assert(elevated,"real pinned RC TOTP UI did not gain AAL2");
   console.log("PASS real pinned RC browser TOTP AAL2 privileged dashboard");
+  phase="release_page";
   const release=await page.goto(LOCAL+"/admin-updates.html",{
     waitUntil:"domcontentloaded",timeout:35000});
   assert.equal(release.status(),200);
+  phase="release_mfa_gate";
   await page.locator("#releaseDashboard").waitFor({state:"visible",timeout:25000});
   assert.equal(await page.locator("#releaseLogin").isVisible(),false);
   assert.equal(await page.locator("#releaseStageApply").isEnabled(),true,
@@ -111,7 +122,9 @@ async function main(){
    if(d.type()==="confirm"&&d.message().includes("시험 웹"))await d.accept();
    else await d.dismiss();
   });
+  phase="click_stage_apply";
   await page.locator("#releaseStageApply").click();
+  phase="queue_confirmation";
   await page.waitForFunction(()=>{
    const message=document.querySelector("#releaseStatus")?.textContent||"";
    return message.includes("배포 요청 등록 완료");
@@ -131,7 +144,7 @@ async function main(){
   server.kill("SIGTERM");
  }
 }
-main().catch(()=>{
- console.error("FAIL stage42 browser owner-button E2E: assertion failed (credentials suppressed)");
+main().catch((err)=>{
+ console.error("FAIL stage42 browser at phase="+phase+" type="+String(err?.name||"unknown")+" (secrets suppressed)");
  process.exitCode=1;
 });
