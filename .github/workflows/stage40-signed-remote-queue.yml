@@ -1,4 +1,6 @@
-name: Stage40 signed QA release queue and REAL HTTPS Pages B-to-A (NO PRODUCTION)
+name: Stage40 signed QA remote release historical evidence — RETIRED (READ ONLY)
+# Historical success: https://github.com/noam0127/beagu-index-qa/actions/runs/45059842879
+# Never replay the one-shot OIDC queue after successful A→B→A cleanup.
 on:
   push:
     branches: [main]
@@ -7,195 +9,37 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
-  pages: write
-  id-token: write
-concurrency:
-  group: qa-pages-static
-  cancel-in-progress: false
 jobs:
-  signed-qa-release:
+  verify-retired:
     if: github.repository == 'noam0127/beagu-index-qa'
     runs-on: ubuntu-24.04
-    timeout-minutes: 28
-    environment:
-      name: github-pages
-      url: https://noam0127.github.io/beagu-index-qa/
+    timeout-minutes: 6
     steps:
-      - name: Checkout only independent QA repo
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          path: qa
-          persist-credentials: false
-
-      - name: Checkout original vetted static mirror builder (IMMUTABLE)
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: noam0127/beagu-index
-          ref: 640f66c844a10bd894d4f6d31d0f4601c38d5b33
-          path: source
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Checkout reviewed application release candidate (IMMUTABLE)
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: noam0127/beagu-index
-          ref: 5c95aadad971901a8222f83c52e93bf901a3aeb7
-          path: qa/rc
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Create safe A and B with original worker and no authentication
-        id: prepare
-        shell: bash
+      - name: Assert QA Pages is restored A and disposable staging endpoint is HTTP 410
         run: |
-          set -euo pipefail
-          test "$(git -C source rev-parse HEAD)" = 640f66c844a10bd894d4f6d31d0f4601c38d5b33
-          test "$(git -C qa/rc rev-parse HEAD)" = 5c95aadad971901a8222f83c52e93bf901a3aeb7
-          python3 qa/tests/stage40-real-release-worker-packager.py
-          (
-            cd source
-            git fetch --no-tags origin +refs/heads/release/v1.1.0-rc.1:refs/remotes/origin/release/v1.1.0-rc.1
-            test "$(git rev-parse refs/remotes/origin/release/v1.1.0-rc.1)" = 5c95aadad971901a8222f83c52e93bf901a3aeb7
-            python3 scripts/release-manager/build-offline-rc-bundle.py
-            python3 scripts/release-manager/build-stage38-static-mirror.py
-            python3 ../qa/scripts/patch_participation_qa.py _preview_standalone_site
-          )
-          cp -a source/_preview_standalone_site site-a
-          cp -a source/_preview_standalone_site site-b
-          python3 qa/scripts/stage40_pages_aba.py prepare site-a A
-          python3 qa/scripts/stage40_pages_aba.py prepare site-b B
-          test ! -e site-a/CNAME && test ! -e site-b/CNAME
-
-      - name: Validate current site is baseline A and unsigned API is rejected
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 qa/scripts/stage40_pages_aba.py verify https://noam0127.github.io/beagu-index-qa/ A
           python3 - <<'PY'
           import json,urllib.request,urllib.error
-          url='https://ycwuugggqbunlbwuzvbx.supabase.co/functions/v1/beagu-stage40-release-queue-oidc-once'
-          req=urllib.request.Request(url,data=json.dumps({'action':'status','sha':'0'*40}).encode(),headers={'Content-Type':'application/json'})
+          base="https://noam0127.github.io/beagu-index-qa/"
+          with urllib.request.urlopen(base+"stage40-remote-state.json",timeout=20) as r:
+              state=json.load(r)
+              assert state["stage"]=="A"
+              assert state["login_enabled"] is False
+              assert state["api_calls_enabled"] is False
+              assert state["production_release"] is False
+          with urllib.request.urlopen(base+"index.html",timeout=20) as r:
+              html=r.read().decode("utf8")
+              assert '<meta name="qa-stage40-release" content="A">' in html
+              assert "stage38-public-static-warning" in html
+              assert "connect-src 'none'" in html
+              assert "form-action 'none'" in html
+          url="https://ycwuugggqbunlbwuzvbx.supabase.co/functions/v1/beagu-stage40-release-queue-oidc-once"
           try:
-            urllib.request.urlopen(req,timeout=20)
-            raise AssertionError('Unsigned QA release API must deny access')
+              urllib.request.urlopen(url,timeout=20)
+              raise AssertionError("One-shot queue function is still enabled")
           except urllib.error.HTTPError as e:
-            assert e.code in (401,403),f'Unexpected rejection {e.code}'
-          print('PASS: QA Pages initial A and anonymous queue access denied')
+              assert e.code==410,f"Wrong staging API status {e.code}"
+              body=json.loads(e.read())
+              assert body["status"]=="DISABLED"
+              assert body["reason"]=="STAGE40_SIGNED_QA_RELEASE_A_B_A_COMPLETED"
+          print("PASS: independent HTTPS QA A restored and disposable signed queue permanently disabled")
           PY
-
-      - name: Configure only independent QA GitHub Pages
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
-
-      - name: Signed queue registration (no production release)
-        id: begin
-        shell: bash
-        run: python3 qa/scripts/stage40_signed_release_qa.py begin
-
-      - name: Signed release worker claims job from isolated Supabase
-        id: claim
-        shell: bash
-        run: python3 qa/scripts/stage40_signed_release_qa.py claim
-
-      - name: Upload static candidate B only
-        uses: actions/upload-pages-artifact@v3
-        with:
-          name: stage40-signed-qa-b
-          path: site-b
-
-      - name: Wait for upload indexing
-        run: sleep 8
-
-      - name: Deploy real B to independent QA Pages
-        id: deploy_b
-        uses: actions/deploy-pages@v4
-        with:
-          artifact_name: stage40-signed-qa-b
-
-      - name: Verify B from actual public HTTPS (credentials and API disabled)
-        id: verify_b
-        shell: bash
-        run: python3 qa/scripts/stage40_pages_aba.py verify https://noam0127.github.io/beagu-index-qa/ B
-
-      - name: Signed worker commits successful B stage and audit history
-        id: complete
-        shell: bash
-        run: python3 qa/scripts/stage40_signed_release_qa.py complete
-
-      - name: Queue signed staging rollback B-to-A
-        id: queue_rollback
-        shell: bash
-        run: python3 qa/scripts/stage40_signed_release_qa.py queue_rollback
-
-      - name: Signed rollback worker claims job
-        id: claim_rollback
-        shell: bash
-        run: python3 qa/scripts/stage40_signed_release_qa.py claim_rollback
-
-      # A restore is mandatory regardless of a B upload, deployment or claim failure.
-      - name: Upload baseline A to guarantee restore attempt
-        if: always() && steps.prepare.outcome == 'success'
-        id: restore_upload
-        uses: actions/upload-pages-artifact@v3
-        with:
-          name: stage40-signed-qa-a-restore
-          path: site-a
-
-      - name: Allow restore artifact metadata to propagate
-        if: always() && steps.restore_upload.outcome == 'success'
-        run: sleep 8
-
-      - name: Restore A to independent QA Pages
-        if: always() && steps.restore_upload.outcome == 'success'
-        id: restore_deploy
-        uses: actions/deploy-pages@v4
-        with:
-          artifact_name: stage40-signed-qa-a-restore
-
-      - name: Verify restored A from actual public HTTPS
-        if: always() && steps.restore_deploy.outcome == 'success'
-        id: restore_verify
-        shell: bash
-        run: python3 qa/scripts/stage40_pages_aba.py verify https://noam0127.github.io/beagu-index-qa/ A
-
-      - name: Signed worker confirms rollback in staging DB and audit history
-        if: always() && steps.restore_verify.outcome == 'success' && steps.claim_rollback.outcome == 'success'
-        id: complete_rollback
-        shell: bash
-        run: python3 qa/scripts/stage40_signed_release_qa.py complete_rollback
-
-      - name: Read back exact two signed stage audit records and empty production SHA
-        if: always() && steps.complete_rollback.outcome == 'success'
-        id: audit
-        shell: bash
-        run: python3 qa/scripts/stage40_signed_release_qa.py status
-
-      - name: Delete only synthetic QA jobs/history after real restore confirmation
-        if: always() && steps.audit.outcome == 'success'
-        id: cleanup
-        shell: bash
-        run: python3 qa/scripts/stage40_signed_release_qa.py cleanup
-
-      - name: Emergency QA queue cleanup AFTER verified A restore
-        if: always() && steps.restore_verify.outcome == 'success' && steps.cleanup.outcome != 'success'
-        id: recover
-        shell: bash
-        run: python3 qa/scripts/stage40_signed_release_qa.py recover_after_verified_restore
-
-      - name: Summarize signed queue and production isolation results
-        if: always()
-        shell: bash
-        run: |
-          echo "Independent QA only. Original worker packaging; signed OIDC staging queue; real Pages B deploy and A restore; real staging DB audit." >> "$GITHUB_STEP_SUMMARY"
-          if [ "${{ steps.cleanup.outcome }}" != success ]; then
-            echo "NOT FULL PASS: Stage audit or cleanup failed. Recovery outcome: ${{ steps.recover.outcome }}." >> "$GITHUB_STEP_SUMMARY"
-            exit 1
-          fi
-          if [ "${{ steps.verify_b.outcome }}" != success ] || [ "${{ steps.restore_verify.outcome }}" != success ]; then
-            echo "NOT FULL PASS: one of the actual remote Pages HTTPS checks was not successful." >> "$GITHUB_STEP_SUMMARY"
-            exit 1
-          fi
-          echo "PASS: OIDC queue -> REAL QA Pages B -> server-confirmed staging history -> rollback -> REAL HTTPS A -> clean QA DB." >> "$GITHUB_STEP_SUMMARY"
-          echo "NOT PROVEN: admin owner AAL2 button, real user email confirmation, production release." >> "$GITHUB_STEP_SUMMARY"
