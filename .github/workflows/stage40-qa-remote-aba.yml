@@ -1,0 +1,141 @@
+name: Stage40 QA-only hosted A-B-A rollback via reviewed packager (NO AUTH)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/stage40-qa-remote-aba.yml"
+      - "scripts/stage40_pages_aba.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: qa-pages-static
+  cancel-in-progress: false
+
+jobs:
+  qa-hosted-rollback:
+    if: github.repository == 'noam0127/beagu-index-qa'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 28
+    environment:
+      name: github-pages
+      url: https://noam0127.github.io/beagu-index-qa/
+    steps:
+      - name: Checkout only isolated QA repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: qa
+          persist-credentials: false
+
+      - name: Checkout reviewed immutable static packaging tooling
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: noam0127/beagu-index
+          ref: 640f66c844a10bd894d4f6d31d0f4601c38d5b33
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout immutable actual release worker and candidate RC
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: noam0127/beagu-index
+          ref: 5c95aadad971901a8222f83c52e93bf901a3aeb7
+          path: qa/rc
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Prepare A and B isolated no-credential sites; verify REAL original worker package
+        id: prepare
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C source rev-parse HEAD)" = 640f66c844a10bd894d4f6d31d0f4601c38d5b33
+          test "$(git -C qa/rc rev-parse HEAD)" = 5c95aadad971901a8222f83c52e93bf901a3aeb7
+          python3 qa/tests/stage40-real-release-worker-packager.py
+          (
+            cd source
+            git fetch --no-tags origin +refs/heads/release/v1.1.0-rc.1:refs/remotes/origin/release/v1.1.0-rc.1
+            test "$(git rev-parse refs/remotes/origin/release/v1.1.0-rc.1)" = 5c95aadad971901a8222f83c52e93bf901a3aeb7
+            python3 scripts/release-manager/build-offline-rc-bundle.py
+            python3 scripts/release-manager/build-stage38-static-mirror.py
+            python3 ../qa/scripts/patch_participation_qa.py _preview_standalone_site
+          )
+          cp -a source/_preview_standalone_site site-a
+          cp -a source/_preview_standalone_site site-b
+          python3 qa/scripts/stage40_pages_aba.py prepare site-a A
+          python3 qa/scripts/stage40_pages_aba.py prepare site-b B
+          test ! -e site-a/CNAME && test ! -e site-b/CNAME
+
+      - name: Enable GitHub Pages for this independent QA repo
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Upload QA baseline A
+        uses: actions/upload-pages-artifact@v3
+        with:
+          name: stage40-qa-hosted-a-first
+          path: site-a
+
+      - name: Deploy baseline A to QA Pages
+        uses: actions/deploy-pages@v4
+        with:
+          artifact_name: stage40-qa-hosted-a-first
+
+      - name: Verify baseline A via REAL HTTPS
+        shell: bash
+        run: python3 qa/scripts/stage40_pages_aba.py verify https://noam0127.github.io/beagu-index-qa/ A
+
+      - name: Upload QA candidate B
+        uses: actions/upload-pages-artifact@v3
+        with:
+          name: stage40-qa-hosted-b-preview
+          path: site-b
+
+      - name: Deploy candidate B to QA Pages
+        uses: actions/deploy-pages@v4
+        with:
+          artifact_name: stage40-qa-hosted-b-preview
+
+      - name: Verify B via REAL HTTPS
+        shell: bash
+        run: python3 qa/scripts/stage40_pages_aba.py verify https://noam0127.github.io/beagu-index-qa/ B
+
+      - name: Upload baseline A for guaranteed restore attempt
+        if: always() && steps.prepare.outcome == 'success'
+        id: restore_upload
+        uses: actions/upload-pages-artifact@v3
+        with:
+          name: stage40-qa-hosted-a-restore
+          path: site-a
+
+      - name: Restore A to QA Pages even after failed B attempt
+        if: always() && steps.restore_upload.outcome == 'success'
+        id: restore_deploy
+        uses: actions/deploy-pages@v4
+        with:
+          artifact_name: stage40-qa-hosted-a-restore
+
+      - name: Confirm actual HTTP restore A and disabled authentication
+        if: always() && steps.restore_deploy.outcome == 'success'
+        id: restore_verify
+        shell: bash
+        run: python3 qa/scripts/stage40_pages_aba.py verify https://noam0127.github.io/beagu-index-qa/ A
+
+      - name: Publish accurate scoped outcome
+        if: always()
+        shell: bash
+        run: |
+          echo "QA-only hosted A-B-A: actual GitHub Pages; original worker package test; static login/API/forms disabled." >> "$GITHUB_STEP_SUMMARY"
+          echo "This does NOT prove signed Supabase release queue, production deployment, or real email confirmation." >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ steps.restore_verify.outcome }}" != success ]; then
+            echo "RESTORE NOT VERIFIED: QA Pages must be repaired. Production was not targeted." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "Final A restore verified (original QA static-only UI)." >> "$GITHUB_STEP_SUMMARY"
