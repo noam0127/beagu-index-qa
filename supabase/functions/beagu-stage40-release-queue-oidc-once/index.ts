@@ -31,9 +31,8 @@ async function trustedEnvironment(){
  const {count:anchor,error:ae}=await db.from("schools").select("school_id",{count:"exact",head:true})
   .eq("school_id","STAGE38-FICTIONAL-001");
  if(ae||anchor!==1)fail("QA_ANCHOR_MISSING");
- const {count:authCount,error:ue}=await db.schema("auth").from("users").select("id",{count:"exact",head:true});
- // auth schema is not exposed in all Supabase deployments. Query public QA
- // release state and restrict all mutation to the test-only existing empty queue.
+ // Auth schema is not exposed in Data API. The QA-only school anchor and
+ // never-initialized production release state jointly constrain this test.
  const {data:state,error:se}=await db.from("beagu_site_release_state_v1").select("*").eq("id",1).single();
  if(se||!state||state.production_sha!==null)fail("PRODUCTION_STATE_NOT_EMPTY");
  const {count:other,error:oe}=await db.from("beagu_site_release_jobs_v1")
@@ -73,9 +72,11 @@ async function complete(jobId:string,action:string,versionSha:string|null,fromSh
  if(je||!job||job.to_sha!==versionSha||job.from_sha!==fromSha)fail("JOB_NOT_RUNNING");
  const state=await trustedEnvironment();
  if(state.staging_sha!==fromSha)fail("STAGING_STATE_CHANGED");
- check(await db.from("beagu_site_release_state_v1").update({
+ let updateQuery=db.from("beagu_site_release_state_v1").update({
   staging_sha:versionSha,staging_version:versionSha?PREFIX:null,updated_at:new Date().toISOString()
- }).eq("id",1).eq("staging_sha",fromSha).select("id").single(),"STATE_COMMIT");
+ }).eq("id",1);
+ updateQuery=fromSha===null?updateQuery.is("staging_sha",null):updateQuery.eq("staging_sha",fromSha);
+ check(await updateQuery.select("id").single(),"STATE_COMMIT");
  check(await db.from("beagu_site_release_history_v1").insert({
   job_id:jobId,action,target:"staging",version:PREFIX,
   from_sha:fromSha,to_sha:versionSha,
