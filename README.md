@@ -2,12 +2,19 @@
 
 이 저장소는 운영 `baeguindex.com`과 **완전히 별도**의 GitHub Pages 시험 사이트입니다.
 
+## 통합 39~40단계 최신 결론
+- [실제 인증·보안·2026 개인정보·롤백 회귀검증 종합 증거](docs/releases/v1.1.0-stage39-40-integrated-evidence-20261123.md)
+- 격리 **로컬 origin**에서 실제 관리자 AAL1 → TOTP AAL2 및 일반 회원 접근 거부 테스트 통과 (Actions #45050044666)
+- **공개 QA Pages는 여전히 정적 화면 전용**이며 이메일/비밀번호/실제 참여코드 입력 금지
+- 실제 이메일 수신 인증, 호스팅 인증, 완전한 Lv3/개인정보/롤백 E2E 미완료: **NO-GO**
+- 일회용 인증 테스트 계정 2개 삭제, 계정 생성 API 영구 비활성화 완료
+
 ## 현재 배포 모드: 화면 검증 전용
 - 고정 RC 커밋: `5c95aadad971901a8222f83c52e93bf901a3aeb7`
 - 배포 패키징 도구의 검토된 소스 커밋: `640f66c844a10bd894d4f6d31d0f4601c38d5b33`
 - 로그인, 이메일, 비밀번호, MFA, 모든 API 통신, 양식 제출 **금지**
 - 어떤 개인정보나 운영 DB 데이터도 입력하지 마세요.
-- 예상 독립 Pages 경로: `https://noam0127.github.io/beagu-index-qa/` (GitHub 설정 후)
+- 배포된 독립 Pages 경로: `https://noam0127.github.io/beagu-index-qa/` (GitHub 설정 후)
 - 운영 GitHub Pages/CNAME, 운영 Supabase, 운영 main 브랜치를 변경하지 않습니다.
 
 ## GitHub Pages 초기 설정
