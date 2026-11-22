@@ -1,0 +1,50 @@
+name: Stage40 real staging signup email send (ONE SHOT)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/stage40-email-signup-once.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  signed-email-signup:
+    if: github.repository == 'noam0127/beagu-index-qa'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Signed isolated staging Supabase Auth signup to private test alias
+        run: |
+          node <<'JS'
+          const assert=require('node:assert/strict');
+          (async()=>{
+            const requestUrl=process.env.ACTIONS_ID_TOKEN_REQUEST_URL;
+            const requestToken=process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+            assert.ok(requestUrl&&requestToken);
+            const res=await fetch(requestUrl+(requestUrl.includes('?')?'&':'?')+
+              'audience=beagu-stage40-email-qa',{
+              headers:{Authorization:'Bearer '+requestToken},
+              signal:AbortSignal.timeout(20000)});
+            assert.equal(res.status,200);
+            const idToken=(await res.json()).value;
+            assert.ok(typeof idToken==='string'&&idToken.length>100);
+            const result=await fetch('https://ycwuugggqbunlbwuzvbx.supabase.co/functions/v1/beagu-stage40-email-qa-once',{
+              method:'POST',redirect:'manual',
+              headers:{Authorization:'Bearer '+idToken,'Content-Type':'application/json'},
+              body:JSON.stringify({action:'signup'}),signal:AbortSignal.timeout(50000)});
+            const value=await result.json().catch(()=>({}));
+            console.log('EMAIL_SIGNUP_QA',JSON.stringify({
+              http:result.status,status:value.status||value.error||'UNKNOWN',
+              code:value.error_code||'',confirmed_via_inbox:false,
+              confirmation_required:value.confirmation_required??null
+            }));
+            assert.equal(result.status,200);
+            assert.equal(value.status,'SIGNUP_ACCEPTED');
+            assert.equal(value.temporary_account_created,true);
+            console.log('PASS: staging real Auth signup accepted; actual inbox delivery requires separate Gmail confirmation');
+          })().catch(e=>{console.error('EMAIL_SIGNUP_BLOCKED: '+String(e.message).slice(0,80));process.exitCode=1});
+          JS
