@@ -1,0 +1,45 @@
+name: Stage40 isolated email signup fixture cleanup (ONE SHOT)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/stage40-email-cleanup-once.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  signed-cleanup:
+    if: github.repository == 'noam0127/beagu-index-qa'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Revoke/delete sole disposable staging email Auth account
+        run: |
+          node <<'JS'
+          const assert=require('node:assert/strict');
+          (async()=>{
+            const issuer=process.env.ACTIONS_ID_TOKEN_REQUEST_URL;
+            const token=process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+            assert.ok(issuer&&token);
+            const value=await fetch(issuer+(issuer.includes('?')?'&':'?')+
+              'audience=beagu-stage40-email-qa',{
+              headers:{Authorization:'Bearer '+token},
+              signal:AbortSignal.timeout(20000)});
+            assert.equal(value.status,200);
+            const signed=(await value.json()).value;
+            const res=await fetch('https://ycwuugggqbunlbwuzvbx.supabase.co/functions/v1/beagu-stage40-email-qa-once',{
+              method:'POST',redirect:'manual',
+              headers:{Authorization:'Bearer '+signed,'Content-Type':'application/json'},
+              body:'{"action":"cleanup"}',signal:AbortSignal.timeout(30000)});
+            const data=await res.json().catch(()=>({}));
+            console.log('EMAIL_QA_CLEANUP',JSON.stringify({http:res.status,status:data.status||data.error||'UNKNOWN',removed:data.deleted??null}));
+            assert.equal(res.status,200);
+            assert.equal(data.status,'CLEANED');
+            assert.equal(data.deleted,1);
+            console.log('PASS: only staging temporary email signup account deleted; user Gmail unaffected');
+          })().catch(err=>{console.error('EMAIL_CLEANUP_BLOCKED: '+String(err.message).slice(0,100));process.exitCode=1});
+          JS
