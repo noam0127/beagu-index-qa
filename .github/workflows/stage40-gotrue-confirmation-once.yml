@@ -22,9 +22,18 @@ jobs:
         run: |
           set -euo pipefail
           api='https://ycwuugggqbunlbwuzvbx.supabase.co/functions/v1/beagu-stage40-gotrue-confirm-once'
-          http=$(curl --max-time 25 -sS -o /tmp/stage40-denial.json -w '%{http_code}' -X POST "$api")
-          test "$http" = 401
-          echo 'PASS: unauthenticated account-verification test denied'
+          for attempt in 1 2 3 4 5; do
+            http=$(curl --max-time 25 -sS -o /tmp/stage40-denial.json -w '%{http_code}' -X POST "$api")
+            echo "Unauthenticated test endpoint HTTP $http (attempt $attempt)"
+            if [ "$http" = 401 ] || [ "$http" = 403 ]; then
+              echo 'PASS: unauthenticated account-verification test denied'
+              exit 0
+            fi
+            if [ "$http" != 404 ]; then exit 1; fi
+            sleep 5
+          done
+          echo 'FAIL: staging function did not become reachable'
+          exit 1
       - name: Run actual hosted GoTrue token confirmation and login; never print credentials
         shell: bash
         run: |
