@@ -43,9 +43,9 @@ async function run(){
         {id:"fake-only",email_confirmed_at:"2026-11-23T00:00:00Z",is_anonymous:false,
          user_metadata:{beagu_sms_opt_in:false}}:null},error:null}),
       signUp:async({email,password,options})=>{
-        assert.match(email,/^stage40-ui@/);
-        assert.ok(password.length>=10);
-        assert.equal(options.data.beagu_sms_opt_in,false);
+        if(!/^stage40-ui@/.test(email) || password.length<10 ||
+            options.data.beagu_sms_opt_in!==false)
+          throw Error("Invalid simulated signup request");
         state.signupRequested=true;return {data:{user:null,session:null},error:null};
       },
       signInWithPassword:async()=>{
