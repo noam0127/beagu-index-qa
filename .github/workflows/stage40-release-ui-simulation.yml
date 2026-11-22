@@ -1,0 +1,53 @@
+name: Stage40 real release-center UI Chromium A-B-A mock integration (NO DEPLOY)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "tests/stage40-release-buttons-simulator.cjs"
+      - ".github/workflows/stage40-release-ui-simulation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  actual-rc-ui:
+    if: github.repository == 'noam0127/beagu-index-qa'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Checkout standalone QA test suite
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Checkout immutable reviewed RC into separate folder
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: noam0127/beagu-index
+          ref: 5c95aadad971901a8222f83c52e93bf901a3aeb7
+          path: rc
+          persist-credentials: false
+      - name: Install pinned Playwright Chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --prefix .stage40-release-deps --no-save --no-package-lock playwright@1.56.1
+          .stage40-release-deps/node_modules/.bin/playwright install --with-deps chromium
+      - name: Execute actual RC UI + simulated release state and rollback
+        shell: bash
+        env:
+          NODE_PATH: ${{ github.workspace }}/.stage40-release-deps/node_modules
+        run: |
+          set -euo pipefail
+          test "$(git -C rc rev-parse HEAD)" = 5c95aadad971901a8222f83c52e93bf901a3aeb7
+          node --check tests/stage40-release-buttons-simulator.cjs
+          node tests/stage40-release-buttons-simulator.cjs
+      - name: Archive non-sensitive UI state evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage40-actual-rc-release-ui-simulation
+          path: artifacts/stage40-release-ui/
+          if-no-files-found: ignore
+          retention-days: 7
