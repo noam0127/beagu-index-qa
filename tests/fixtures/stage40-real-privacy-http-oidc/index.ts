@@ -53,7 +53,7 @@ Deno.serve(async(req:Request)=>{
   const response=await fetch(STAGING+"/functions/v1/beagu-level-api",{
     method:"POST",redirect:"manual",
     headers:{"Content-Type":"application/json","apikey":PUB,
-      "Origin":"https://noam0127.github.io","X-Beagu-Session":token},
+      "Origin":"http://localhost:8000","X-Beagu-Session":token},
     body:JSON.stringify(action==="percentiles"?
       {action,schoolIds:[school]}:{action}),
     signal:AbortSignal.timeout(18000)
