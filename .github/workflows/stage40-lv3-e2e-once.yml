@@ -1,0 +1,65 @@
+name: Stage40 actual two-user Lv3 and cross-role staging proof (ONE SHOT)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/stage40-lv3-e2e-once.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: stage40-real-lv3-once
+  cancel-in-progress: false
+
+jobs:
+  signed-staging-lv3:
+    if: github.repository == 'noam0127/beagu-index-qa' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    steps:
+      - name: Verified OIDC workflow calls staging-only one-shot fixture
+        shell: bash
+        run: |
+          node <<'JS'
+          const assert=require('node:assert/strict');
+          (async()=>{
+            const raw=process.env.ACTIONS_ID_TOKEN_REQUEST_URL;
+            const secret=process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+            assert.ok(raw&&secret,'Signed GitHub OIDC required');
+            const issuer=await fetch(raw+(raw.includes('?')?'&':'?')+
+              'audience=beagu-stage40-lv3-once',{
+              headers:{Authorization:'Bearer '+secret},
+              signal:AbortSignal.timeout(20000)});
+            assert.equal(issuer.status,200,'OIDC authorization unavailable');
+            const signed=(await issuer.json()).value;
+            assert.ok(typeof signed==='string'&&signed.length>100);
+            const result=await fetch(
+              'https://ycwuugggqbunlbwuzvbx.supabase.co/functions/v1/beagu-stage40-lv3-oidc-once',{
+              method:'POST',redirect:'manual',
+              headers:{Authorization:'Bearer '+signed,'Content-Type':'application/json'},
+              body:'{}',signal:AbortSignal.timeout(100000)});
+            const status=await result.json().catch(()=>({}));
+            const safe={
+              http:result.status,
+              status:String(status.status||'UNKNOWN').slice(0,64),
+              checks:status.checks_passed,
+              cleanup:status.cleanup_ok,
+              reason:String(status.reason||'UNKNOWN').slice(0,90),
+            };
+            console.log('STAGE40_LV3_E2E',JSON.stringify(safe));
+            assert.equal(result.status,200,'Real staging Lv3 exercise rejected');
+            assert.equal(status.status,'PASS');
+            assert.equal(status.checks_passed,15);
+            assert.equal(status.cleanup_ok,true);
+            console.log('PASS: real Supabase Auth JWTs + earned visitor referral identity, two actual Lv3 tiers, cross-account Post-it, revoked membership, admin-role denial; identities deleted');
+          })().catch(err=>{console.error('STAGE40_LV3_BLOCKED: '+String(err.message).slice(0,120));process.exitCode=1});
+          JS
+      - name: No production data or accounts
+        if: always()
+        run: |
+          echo 'Only staging synthetic visitors f000...0401/0402. No production requests or state writes.'
+          echo 'The signed temporary function must be retired after this one-shot check.'
