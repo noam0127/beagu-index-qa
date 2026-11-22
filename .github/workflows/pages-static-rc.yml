@@ -49,6 +49,7 @@ jobs:
           test "$(git rev-parse refs/remotes/origin/release/v1.1.0-rc.1)" =             "5c95aadad971901a8222f83c52e93bf901a3aeb7"
           python3 scripts/release-manager/build-offline-rc-bundle.py
           python3 scripts/release-manager/build-stage38-static-mirror.py
+          python3 ../qa/scripts/patch_participation_qa.py _preview_standalone_site
           python3 - <<'PY'
           import json,pathlib,hashlib
           p=pathlib.Path('_preview_standalone_site')
@@ -59,6 +60,18 @@ jobs:
           assert mirror['source_sha']==manifest['source_sha']
           assert mirror['login_enabled'] is False and mirror['api_calls_enabled'] is False
           assert mirror['supabase_auth_mfa_browser_e2e_passed'] is False
+          qa=json.loads((p/'qa-participation-ui-manifest.json').read_text())
+          assert qa['source_sha']==manifest['source_sha']
+          assert qa['real_codes_allowed'] is False
+          assert qa['login_enabled'] is False and qa['api_calls_enabled'] is False
+          assert 'index.html' in qa['modified_pages']
+          for relative in qa['modified_pages']:
+              html=(p/relative).read_text(encoding='utf8')
+              assert 'beagu-qa-participation-desktop-css' in html,relative
+              assert 'beagu-qa-participation-demo-js' in html,relative
+              assert 'button.type=\'button\'' in html,relative
+              assert "connect-src 'none'" in html,relative
+              assert "form-action 'none'" in html,relative
           assert not (p/'CNAME').exists()
           # GitHub Pages project subpath works with relative links.
           required=['index.html','admin.html','admin-updates.html','result.html','js/challenge.html']
@@ -115,6 +128,13 @@ jobs:
                   assert manifest['login_enabled'] is False
                   assert manifest['api_calls_enabled'] is False
                   assert manifest['supabase_auth_mfa_browser_e2e_passed'] is False
+                  ui=json.loads(fetch('qa-participation-ui-manifest.json'))
+                  assert ui['source_sha']==manifest['source_sha']
+                  assert ui['real_codes_allowed'] is False
+                  assert ui['login_enabled'] is False and ui['api_calls_enabled'] is False
+                  assert 'beagu-qa-participation-desktop-css' in page
+                  assert 'beagu-qa-participation-demo-js' in page
+                  assert "connect-src 'none'" in page
                   for route in ['admin.html','admin-updates.html','result.html','js/challenge.html']:
                       body=fetch(route)
                       assert 'stage38-public-static-warning' in body,route
