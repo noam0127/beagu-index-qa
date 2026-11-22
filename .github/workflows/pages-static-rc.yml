@@ -74,6 +74,8 @@ jobs:
 
       - name: Configure GitHub Pages (isolated QA repository only)
         uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       - name: Upload sanitized static site
         uses: actions/upload-pages-artifact@v3
