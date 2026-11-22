@@ -104,7 +104,9 @@ Deno.serve(async(req:Request)=>{
    {token_sha256:await sha(code1),access_level:1,expires_at:hours(-0.10),identity_campaign:"STAGE40_PRIVACY_HTTP_TEST"},
    {token_sha256:await sha(code2),access_level:2,expires_at:hours(-0.10),identity_campaign:"STAGE40_PRIVACY_HTTP_TEST"}
   ]));
-  check("tier1_recent_rejected",empty(await runApi(code1)));
+  const initialOne=await runApi(code1);
+  if(!empty(initialOne))throw Error("CHECK_FAIL_tier1_recent_rejected_HTTP"+initialOne.status+"_CODE_"+String(initialOne.value?.error||"NO_ERROR").replace(/[^A-Z0-9_]/gi,"").slice(0,40));
+  countChecks.push("tier1_recent_rejected");
   check("tier2_metric_under_6h_rejected",empty(await runApi(code2)));
 
   await must("metric_age7",db.from("beagu_release_metrics_v2")
