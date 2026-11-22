@@ -79,23 +79,27 @@ Deno.serve(async(req:Request)=>{
       try{await db.auth.admin.deleteUser(uid);}catch{}
     }
   };
+  let phase="start";
   try{
     const suffix=crypto.randomUUID().slice(0,8);
     const adminEmail="stage39-browser-"+runId+"-"+suffix+"@example.invalid";
     const memberEmail="stage39-member-"+runId+"-"+suffix+"@example.invalid";
     const adminPassword=secret(),memberPassword=secret();
+    phase="create_admin";
     const a=await db.auth.admin.createUser({
       email:adminEmail,password:adminPassword,email_confirm:true,
       app_metadata:{stage39_qa:true,stage39_run_id:runId,qa_role:"admin"}
     });
     if(a.error||!a.data.user?.id)throw Error("admin_fixture_failure");
     provisioned.push(a.data.user.id);
+    phase="create_member";
     const b=await db.auth.admin.createUser({
       email:memberEmail,password:memberPassword,email_confirm:true,
       app_metadata:{stage39_qa:true,stage39_run_id:runId,qa_role:"member"}
     });
     if(b.error||!b.data.user?.id)throw Error("member_fixture_failure");
     provisioned.push(b.data.user.id);
+    phase="grant_owner";
     const owner=await db.from("beagu_admin_accounts").insert({
       user_id:a.data.user.id,role:"owner",enabled:true
     });
@@ -107,6 +111,6 @@ Deno.serve(async(req:Request)=>{
     });
   }catch{
     await cleanup();
-    return reply(503,{error:"fixture_create_failed_and_cleanup_attempted"});
+    return reply(503,{error:"fixture_create_failed_"+phase+"_and_cleanup_attempted"});
   }
 });
