@@ -1,0 +1,60 @@
+name: Stage40 2026 staging privacy parity transaction (NO DEPLOY)
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/stage40-2026-privacy-parity.yml"
+      - "supabase/migrations/20261123_stage40_privacy_release_parity_qa_only.sql"
+      - "tests/sql/stage40-2026-privacy-parity-transaction.sql"
+      - "tests/sql/stage40-privacy-ci-bootstrap.sql"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  isolated-postgres-parity:
+    if: github.repository == 'noam0127/beagu-index-qa'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: stage40_qa
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: only-ephemeral-github-action-test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d stage40_qa"
+          --health-interval 3s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGDATABASE: stage40_qa
+      PGUSER: postgres
+      PGPASSWORD: only-ephemeral-github-action-test
+    steps:
+      - name: Checkout QA-only SQL code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Ensure PostgreSQL client exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y postgresql-client
+          fi
+          psql -X -v ON_ERROR_STOP=1 -Atqc 'select version()'
+      - name: Bootstrap pure synthetic school and Auth fixtures
+        run: psql -X -v ON_ERROR_STOP=1 -f tests/sql/stage40-privacy-ci-bootstrap.sql
+      - name: Apply exact QA-only release evidence gates
+        run: psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261123_stage40_privacy_release_parity_qa_only.sql
+      - name: Test staged release, withholding, revocation, sensitive Q31 and Lv1 cooldown
+        run: psql -X -v ON_ERROR_STOP=1 -f tests/sql/stage40-2026-privacy-parity-transaction.sql
+      - name: Confirm no residual synthetic data or public grants
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql -X -v ON_ERROR_STOP=1 -Atqc "select case when (select count(*) from auth.users)=0 and (select count(*) from public.beagu_2026_results_snapshot)=0 and (select count(*) from beagu_private.beagu_2026_publication_basis_review)=0 and (select count(*) from public.schools where school_id='TST9090')=0 and not has_function_privilege('anon','public.beagu_2026_lv2_released_question_results(text)','EXECUTE') and not has_function_privilege('authenticated','public.beagu_2026_released_question_results(text)','EXECUTE') then 'PASS: rollback and RPC grants' else (1/0)::text end"
