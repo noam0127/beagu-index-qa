@@ -96,7 +96,7 @@ async function createUser(input:any){
  must(/^qa-stage42-[a-f0-9]{32}@example\.invalid$/.test(email)
    &&password.length>=65&&password.length<=128,"QA_SETUP_INPUT_INVALID");
  const made=await db.auth.admin.createUser({email,password,email_confirm:true});
- must(!made.error&&!!made.data.user?.id,"QA_AUTH_CREATE_FAILED");
+ must(!made.error&&!!made.data.user?.id,"QA_AUTH_CREATE_FAILED_"+String(made.error?.code||"UNKNOWN"));
  const user=made.data.user.id;
  const own=await db.from("beagu_admin_accounts").insert({
     user_id:user,role:"owner",enabled:true
