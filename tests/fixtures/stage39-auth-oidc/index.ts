@@ -5,7 +5,7 @@ import {createClient} from "https://esm.sh/@supabase/supabase-js@2.58.0";
 import {createRemoteJWKSet,jwtVerify} from "https://esm.sh/jose@5.10.0";
 
 const PROJECT="ycwuugggqbunlbwuzvbx";
-const URL="https://"+PROJECT+".supabase.co";
+const STAGING_URL="https://"+PROJECT+".supabase.co";
 const REPO="noam0127/beagu-index-qa";
 const WORKFLOW=REPO+"/.github/workflows/stage39-auth-e2e.yml@refs/heads/main";
 const AUDIENCE="beagu-stage39-qa-ci";
@@ -36,7 +36,7 @@ Deno.serve(async(req:Request)=>{
     runId=String(payload.run_id||"");
     if(!/^[0-9]{8,20}$/.test(runId))return reply(403,{error:"invalid_run_id"});
   }catch{return reply(403,{error:"invalid_oidc"});}
-  if(dbUrl!==URL||!dbKey)return reply(503,{error:"isolated_staging_only"});
+  if(dbUrl!==STAGING_URL||!dbKey)return reply(503,{error:"isolated_staging_only"});
   const db=createClient(dbUrl,dbKey,{auth:{persistSession:false,autoRefreshToken:false}});
   let action="";
   try{
