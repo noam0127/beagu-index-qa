@@ -48,9 +48,9 @@ jobs:
             console.log('STAGE40_STAGING_PRIVACY',JSON.stringify(safe));
             assert.equal(result.status,200,'Staging real HTTP privacy test rejected');
             assert.equal(payload.status,'PASS');
-            assert.equal(payload.checks_passed,11);
+            assert.equal(payload.checks_passed,12);
             assert.equal(payload.cleanup_ok,true);
-            console.log('PASS: actual staging level-api HTTP 11 policy checks, no production requests, synthetic rows deleted');
+            console.log('PASS: actual staging level-api HTTP 12 policy checks, no production requests, synthetic rows deleted');
           })().catch(e=>{console.error('STAGE40_STAGING_PRIVACY_BLOCKED: '+String(e.message).slice(0,150));process.exitCode=1});
           JS
       - name: No real identities or production releases created
