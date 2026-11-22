@@ -109,8 +109,8 @@ jobs:
                   page=fetch('index.html')
                   manifest=json.loads(fetch('stage38-static-mirror.json'))
                   assert 'stage38-public-static-warning' in page
-                  assert 'connect-src \\'none\\'' in page
-                  assert 'form-action \\'none\\'' in page
+                  assert "connect-src " + chr(39) + "none" + chr(39) in page
+                  assert "form-action " + chr(39) + "none" + chr(39) in page
                   assert manifest['source_sha']=='5c95aadad971901a8222f83c52e93bf901a3aeb7'
                   assert manifest['login_enabled'] is False
                   assert manifest['api_calls_enabled'] is False
@@ -118,8 +118,8 @@ jobs:
                   for route in ['admin.html','admin-updates.html','result.html','js/challenge.html']:
                       body=fetch(route)
                       assert 'stage38-public-static-warning' in body,route
-                      assert 'connect-src \\'none\\'' in body,route
-                      assert 'form-action \\'none\\'' in body,route
+                      assert "connect-src " + chr(39) + "none" + chr(39) in body,route
+                      assert "form-action " + chr(39) + "none" + chr(39) in body,route
                   print('PASS: hosted exact-RC Pages routes + credential/network block')
                   break
               except Exception as exc:
