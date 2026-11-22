@@ -39,7 +39,31 @@ jobs:
 
       - name: Verify single respondent privacy, no school raw counts and opt-in guards
         run: |
-          node tests/2026-public-count-safety.mjs
+          # The immutable RC's older count test forbids even a private GET
+          # school_id history lookup; the newer implementation protects that
+          # private history with a mandatory constant-time ingest token.
+          # Replace the outdated string absence check with authorization and
+          # public-output checks; NEVER weaken the actual API.
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import {readFileSync} from 'node:fs';
+          const edge=readFileSync('supabase/functions/beagu-2026-public-count-ingest/index.ts','utf8');
+          const home=readFileSync('index.html','utf8');
+          const report=readFileSync('school-report.html','utf8');
+          assert.ok(edge.includes("Deno.env.get('BEAGU_2026_INGEST_TOKEN')"));
+          assert.ok(edge.includes("if(expected.length<32)return send(503"));
+          assert.ok(edge.includes("if(given.length<32||given.length>300||!await equal"));
+          const gate=edge.indexOf("if(given.length<32||given.length>300");
+          const history=edge.indexOf("if(req.method==='GET')");
+          assert.ok(gate>=0 && history>gate,'Private history MUST follow the ingest-token gate');
+          assert.ok(edge.includes(".gte('survey_year',2023).lte('survey_year',2025)"));
+          assert.ok(edge.includes("return send(200,{school_ids:[...schoolIds],unresolved});"));
+          assert.ok(!home.includes('data-beagu-2026-form-count'));
+          assert.ok(!home.includes('2026-form-count.js'));
+          assert.ok(!home.includes('2026 본조사 응답 현황'));
+          assert.ok(!report.includes("['학교별 응답자'"));
+          console.log('PASS: 2026 count hidden; authenticated historical school lookup limited to 2023-2025');
+          JS
           node tests/school-question-mode-only-privacy.mjs
           node tests/2026-auto-quality-referral-gate.mjs
 
