@@ -64,7 +64,31 @@ jobs:
           assert.ok(!report.includes("['학교별 응답자'"));
           console.log('PASS: 2026 count hidden; authenticated historical school lookup limited to 2023-2025');
           JS
-          node tests/school-question-mode-only-privacy.mjs
+          # The old test asserts a pre-Lv3 exact code shape. Validate the
+          # current pinned RC's server-side member and privacy guards instead.
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import {readFileSync} from 'node:fs';
+          const edge=readFileSync('supabase/functions/beagu-level-api/index.ts','utf8');
+          const ui=readFileSync('js/level-search.js','utf8');
+          const report=readFileSync('school-report.html','utf8');
+          const compare=readFileSync('js/statistics-compare.js','utf8');
+          assert.ok(edge.includes('const level=Number(session?.access_level)||0;'));
+          assert.ok(edge.includes("if(level!==2||session.identity_campaign!=='2026'||"));
+          assert.ok(edge.includes('return isVerifiedLv3Member(session,account,member,eligiblePostitAuthUser)?3:level;'));
+          assert.ok(edge.includes("admin.auth.getUser(match[1])"));
+          assert.ok(edge.includes("beagu_postit_member_accounts"));
+          assert.ok(edge.includes("beagu_has_earned_challenge_visitor"));
+          for(const token of ['schoolQuestionModes','schoolQuestionSelections','schoolQuestionResults2026']){
+            assert.ok(edge.includes(token),'expected vetted-only response '+token);
+            assert.ok(ui.includes(token),'expected vetted-only UI '+token);
+          }
+          for(const s of [edge,ui,report,compare]){
+            assert.ok(!s.includes('roundedDistribution'));
+            assert.ok(!s.includes('schoolDistributions'));
+          }
+          console.log('PASS: pinned RC Lv3 requires valid Auth and earned visitor; private question distributions absent');
+          JS
           node tests/2026-auto-quality-referral-gate.mjs
 
       - name: Verify update manager, rollback controls and two-commit isolation
