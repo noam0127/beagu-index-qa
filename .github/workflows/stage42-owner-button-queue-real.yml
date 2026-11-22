@@ -4,6 +4,8 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/stage42-owner-button-queue-real.yml"
+      - "scripts/stage42_workflow_client.py"
+      - "tests/stage42-real-admin-button-queue.cjs"
   workflow_dispatch:
 permissions:
   contents: read
