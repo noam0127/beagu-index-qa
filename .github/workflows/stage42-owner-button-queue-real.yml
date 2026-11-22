@@ -1,209 +1,51 @@
-name: Stage42 REAL admin AAL2 update button → QA staging queue → OIDC Pages B→A
+name: Stage42 real owner button → QA signed B/A evidence — retired (READ ONLY)
+# Real successful one-shot historical run:
+# https://github.com/noam0127/beagu-index-qa/actions/runs/45063059246
+# No OIDC tokens, GitHub Pages write permission, Auth registration or queue actions.
 on:
   push:
     branches: [main]
     paths:
       - ".github/workflows/stage42-owner-button-queue-real.yml"
-      - "scripts/stage42_workflow_client.py"
-      - "tests/stage42-real-admin-button-queue.cjs"
   workflow_dispatch:
 permissions:
   contents: read
-  pages: write
-  id-token: write
-concurrency:
-  group: qa-pages-static
-  cancel-in-progress: false
 jobs:
-  real-owner-stage-button:
+  prove-retired:
     if: github.repository == 'noam0127/beagu-index-qa'
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
-    environment:
-      name: github-pages
-      url: https://noam0127.github.io/beagu-index-qa/
+    timeout-minutes: 6
     steps:
-      - name: Checkout independent QA repo
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          path: qa
-          persist-credentials: false
-
-      - name: Checkout immutable vetted packager
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: noam0127/beagu-index
-          ref: 640f66c844a10bd894d4f6d31d0f4601c38d5b33
-          path: source
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Checkout immutable reviewed RC for original UI validation
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: noam0127/beagu-index
-          ref: 5c95aadad971901a8222f83c52e93bf901a3aeb7
-          path: qa/rc
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Validate original RC and create isolated QA A and B static sites
-        id: prepare
+      - name: Independently check public QA A restore and retired stage42 API
         shell: bash
         run: |
-          set -euo pipefail
-          test "$(git -C source rev-parse HEAD)" = 640f66c844a10bd894d4f6d31d0f4601c38d5b33
-          test "$(git -C qa/rc rev-parse HEAD)" = 5c95aadad971901a8222f83c52e93bf901a3aeb7
-          python3 qa/tests/stage40-real-release-worker-packager.py
-          (
-            cd source
-            git fetch --no-tags origin +refs/heads/release/v1.1.0-rc.1:refs/remotes/origin/release/v1.1.0-rc.1
-            test "$(git rev-parse refs/remotes/origin/release/v1.1.0-rc.1)" = 5c95aadad971901a8222f83c52e93bf901a3aeb7
-            python3 scripts/release-manager/build-offline-rc-bundle.py
-            # PRIVATE LOCALHOST-ONLY review copy permits actual staging Auth/MFA.
-            # NEVER upload this tree to Pages; public QA uses sanitized clone.
-            cp -a _preview_standalone_site ../site-auth-local
-            test ! -e ../site-auth-local/CNAME
-            grep -q 'beagu-admin-access' ../site-auth-local/js/beagu-admin-access-v1.js
-            if grep -q 'stage38-cdn-static-guard' ../site-auth-local/admin.html; then exit 1; fi
-            python3 scripts/release-manager/build-stage38-static-mirror.py
-            python3 ../qa/scripts/patch_participation_qa.py _preview_standalone_site
-          )
-          cp -a source/_preview_standalone_site site-a
-          cp -a source/_preview_standalone_site site-b
-          python3 qa/scripts/stage40_pages_aba.py prepare site-a A
-          python3 qa/scripts/stage40_pages_aba.py prepare site-b B
-          test ! -e site-a/CNAME && test ! -e site-b/CNAME
-          python3 qa/scripts/stage40_pages_aba.py verify https://noam0127.github.io/beagu-index-qa/ A
-
-      - name: Install pinned Chromium to click original admin release center
-        shell: bash
-        run: |
-          set -euo pipefail
-          npm install --prefix qa/.stage42-deps --no-save --no-package-lock playwright@1.56.1
-          qa/.stage42-deps/node_modules/.bin/playwright install --with-deps chromium
-
-      - name: Generate ephemeral local account test credentials (never upload)
-        shell: bash
-        run: python3 qa/scripts/stage42_workflow_client.py prepare
-
-      - name: Signed QA-only owner account setup
-        id: owner_setup
-        shell: bash
-        run: python3 qa/scripts/stage42_workflow_client.py setup
-
-      - name: REAL original RC browser MFA login and click Stage Apply button
-        id: real_button
-        shell: bash
-        env:
-          NODE_PATH: ${{ github.workspace }}/qa/.stage42-deps/node_modules
-          STAGE42_STATIC_DIR: site-auth-local
-          STAGE42_FIXTURE_FILE: qa/.stage42-qa-fixture.json
-        run: |
-          set -euo pipefail
-          node --check qa/tests/stage42-real-admin-button-queue.cjs
-          node qa/tests/stage42-real-admin-button-queue.cjs
-
-      - name: Signed GitHub OIDC worker claims real admin-created staging job
-        id: claim
-        shell: bash
-        run: python3 qa/scripts/stage42_workflow_client.py worker_claim
-
-      - name: Configure independent QA GitHub Pages only
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
-
-      - name: Upload B artifact without production domain or credentials
-        uses: actions/upload-pages-artifact@v3
-        with:
-          name: stage42-real-admin-qa-b
-          path: site-b
-
-      - name: Allow Github Pages B artifact indexing
-        run: sleep 8
-
-      - name: Actually deploy B to independent QA Pages
-        id: deploy_b
-        uses: actions/deploy-pages@v4
-        with:
-          artifact_name: stage42-real-admin-qa-b
-
-      - name: Verify actual B on remote HTTPS
-        id: verify_b
-        shell: bash
-        run: python3 qa/scripts/stage40_pages_aba.py verify https://noam0127.github.io/beagu-index-qa/ B
-
-      - name: Signed worker records real HTTPS B success in staging release history
-        id: complete
-        run: python3 qa/scripts/stage42_workflow_client.py worker_complete
-
-      - name: Sign staging rollback intent (NO production target)
-        id: rollback_begin
-        run: python3 qa/scripts/stage42_workflow_client.py worker_rollback_begin
-
-      - name: Signed worker claims B-to-A restore
-        id: rollback_claim
-        run: python3 qa/scripts/stage42_workflow_client.py worker_rollback_claim
-
-      - name: Always upload safe baseline A for restore
-        if: always() && steps.prepare.outcome == 'success'
-        uses: actions/upload-pages-artifact@v3
-        id: restore_upload
-        with:
-          name: stage42-real-admin-qa-a-restore
-          path: site-a
-
-      - name: Wait for baseline restore artifact to index
-        if: always() && steps.restore_upload.outcome == 'success'
-        run: sleep 8
-
-      - name: Restore A on actual independent QA GitHub Pages
-        if: always() && steps.restore_upload.outcome == 'success'
-        uses: actions/deploy-pages@v4
-        id: restore_deploy
-        with:
-          artifact_name: stage42-real-admin-qa-a-restore
-
-      - name: Verify actual remote HTTPS A restored
-        if: always() && steps.restore_deploy.outcome == 'success'
-        id: restore_verify
-        run: python3 qa/scripts/stage40_pages_aba.py verify https://noam0127.github.io/beagu-index-qa/ A
-
-      - name: Commit verified A restoration to signed staging audit
-        if: always() && steps.restore_verify.outcome == 'success' && steps.rollback_claim.outcome == 'success'
-        id: rollback_complete
-        run: python3 qa/scripts/stage42_workflow_client.py worker_rollback_complete
-
-      - name: Verify two real signed staging audit records, owner click and production SHA null
-        if: always() && steps.rollback_complete.outcome == 'success'
-        id: audit
-        run: python3 qa/scripts/stage42_workflow_client.py worker_audit
-
-      - name: Remove synthetic release rows and account after real A verification
-        if: always() && steps.audit.outcome == 'success'
-        id: cleanup
-        run: python3 qa/scripts/stage42_workflow_client.py worker_cleanup
-
-      - name: Emergency synthetic account and queue cleanup after A restore
-        if: always() && steps.restore_verify.outcome == 'success' && steps.cleanup.outcome != 'success' && steps.owner_setup.outcome == 'success'
-        id: recover
-        run: python3 qa/scripts/stage42_workflow_client.py worker_recover
-
-      - name: Scrub local ephemeral credentials regardless of results
-        if: always()
-        run: python3 qa/scripts/stage42_workflow_client.py scrub
-
-      - name: State exact proof limits
-        if: always()
-        shell: bash
-        run: |
-          echo "QA only: real RC browser AAL2 + actual admin stage button; real staging Supabase queued job; signed GitHub worker; actual isolated Pages B→A; audit." >> "$GITHUB_STEP_SUMMARY"
-          echo "Stage-only synthetic production baseline in UI; real production SHA and environment unchanged. Not production QA certification." >> "$GITHUB_STEP_SUMMARY"
-          if [[ "${{ steps.cleanup.outcome }}" != success ||
-                "${{ steps.verify_b.outcome }}" != success ||
-                "${{ steps.restore_verify.outcome }}" != success ]]; then
-            echo "NOT FULL PASS: release, audit, cleanup or HTTPS restore failed." >> "$GITHUB_STEP_SUMMARY"
-            exit 1
-          fi
-          echo "PASS: actual UI button -> owner AAL2 -> staging job -> OIDC worker -> HTTPS B -> HTTPS A -> clean DB." >> "$GITHUB_STEP_SUMMARY"
+          python3 - <<'PY'
+          import urllib.request, urllib.error, json
+          root="https://noam0127.github.io/beagu-index-qa/"
+          with urllib.request.urlopen(root+"qa-stage40-remote-state.json",timeout=25) as res:
+              state=json.load(res)
+              assert state["stage"]=="A"
+              assert state["login_enabled"] is False
+              assert state["api_calls_enabled"] is False
+              assert state["production_release"] is False
+          with urllib.request.urlopen(root+"index.html",timeout=25) as res:
+              html=res.read().decode("utf8")
+              assert '<meta name="qa-stage40-release" content="A">' in html
+              assert "stage38-public-static-warning" in html
+              assert "connect-src 'none'" in html
+              assert "form-action 'none'" in html
+          api="https://ycwuugggqbunlbwuzvbx.supabase.co/functions/v1/beagu-stage42-owner-button-release-once"
+          for method in ["GET","POST"]:
+              req=urllib.request.Request(api,method=method,
+                headers={"Content-Type":"application/json"},
+                data=b"{}" if method=="POST" else None)
+              try:
+                  urllib.request.urlopen(req,timeout=25)
+                  raise AssertionError("One-shot privileged QA staging function still active")
+              except urllib.error.HTTPError as error:
+                  assert error.code==410,f"Wrong retired status: {error.code}"
+                  result=json.load(error)
+                  assert result["status"]=="DISABLED"
+                  assert result["reason"]=="STAGE42_REAL_ADMIN_BUTTON_SIGNED_QA_B_TO_A_COMPLETED"
+          print("PASS: real admin-button QA staged B/A was completed; A restored; one-shot privileged API disabled")
+          PY
