@@ -6,6 +6,7 @@ on:
     paths:
       - "tests/stage40-release-buttons-simulator.cjs"
       - "tests/stage40-challenge-member-ui.cjs"
+      - "tests/stage40-real-release-worker-packager.py"
       - ".github/workflows/stage40-release-ui-simulation.yml"
   workflow_dispatch:
 
@@ -46,6 +47,7 @@ jobs:
           node tests/stage40-release-buttons-simulator.cjs
           node --check tests/stage40-challenge-member-ui.cjs
           node tests/stage40-challenge-member-ui.cjs
+          python3 tests/stage40-real-release-worker-packager.py
       - name: Archive non-sensitive UI state evidence
         if: always()
         uses: actions/upload-artifact@v4
