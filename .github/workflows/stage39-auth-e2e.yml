@@ -37,4 +37,5 @@ jobs:
           PY
           rm -f /tmp/retired-auth.json
       - name: No new account or production release
-        run: echo 'Historical only: no OIDC permission, no test user creation, no production deployment.'
+        run: |
+          echo 'Historical only: no OIDC permission, no test user creation, no production deployment.'
