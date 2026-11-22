@@ -1,0 +1,73 @@
+name: Stage39-40 consolidated privacy and rollback contracts (NO DEPLOY)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/stage39-40-privacy-release-regression.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-rc-privacy-release:
+    if: github.repository == 'noam0127/beagu-index-qa'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Checkout RC repository without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: noam0127/beagu-index
+          ref: 5c95aadad971901a8222f83c52e93bf901a3aeb7
+          persist-credentials: false
+
+      - name: Verify immutable exact RC and no accidental production deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 5c95aadad971901a8222f83c52e93bf901a3aeb7
+          test "$(cat CNAME)" = "baeguindex.com"
+          echo 'PASS: reviewed immutable RC source; no writes to live Pages or CNAME'
+
+      - name: Verify 2026 approved release delay by Lv1 Lv2 Lv3
+        run: |
+          node tests/v1.1.0-stage35-2026-release-policy.mjs
+          node tests/2026-lv2-immediate.mjs
+          node tests/2026-release-consent-gate.mjs
+
+      - name: Verify single respondent privacy, no school raw counts and opt-in guards
+        run: |
+          node tests/2026-public-count-safety.mjs
+          node tests/school-question-mode-only-privacy.mjs
+          node tests/2026-auto-quality-referral-gate.mjs
+
+      - name: Verify update manager, rollback controls and two-commit isolation
+        run: |
+          node tests/site-release-center.mjs
+          python3 tests/site-release-two-sha-isolation.py
+
+      - name: Verify signed once-only staging Auth provisioner is retired
+        shell: bash
+        run: |
+          set -euo pipefail
+          endpoint='https://ycwuugggqbunlbwuzvbx.supabase.co/functions/v1/beagu-stage39-auth-oidc-once'
+          code=$(curl -sS --max-time 20 --output /tmp/stage39-retired.json --write-out '%{http_code}' \
+            -H 'Content-Type: application/json' --data '{"action":"create"}' "$endpoint")
+          test "$code" = 410
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          result=json.loads(Path('/tmp/stage39-retired.json').read_text())
+          assert result['status']=='DISABLED'
+          assert result['reason']=='STAGE39_SIGNED_AUTH_QA_COMPLETED'
+          print('PASS: staging-only temporary Auth provisioning endpoint retired (410)')
+          PY
+          rm -f /tmp/stage39-retired.json
+
+      - name: Summary
+        run: |
+          echo 'STAGE39-40: Source-level 2026 privacy, release/rollback contracts and isolated fixture retirement validated.'
+          echo 'NOT PROVEN: real inbox email confirmation, live GitHub Pages account login/MFA, complete live 2026 publication & actual rollback.'
+          echo 'NO PRODUCTION DEPLOY OR DATABASE WRITES.'
