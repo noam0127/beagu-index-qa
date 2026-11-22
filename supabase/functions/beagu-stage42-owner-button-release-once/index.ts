@@ -13,9 +13,9 @@ const A="640f66c844a10bd894d4f6d31d0f4601c38d5b33";
 const B="5c95aadad971901a8222f83c52e93bf901a3aeb7";
 const VERSION="v1.1.0-stage42-qa";
 const ORIGIN="http://127.0.0.1:38738";
-const URL=Deno.env.get("SUPABASE_URL")||"";
+const PROJECT_URL=Deno.env.get("SUPABASE_URL")||"";
 const KEY=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")||"";
-const db=createClient(URL,KEY,{auth:{persistSession:false,autoRefreshToken:false}});
+const db=createClient(PROJECT_URL,KEY,{auth:{persistSession:false,autoRefreshToken:false}});
 const JWKS=createRemoteJWKSet(new URL("https://token.actions.githubusercontent.com/.well-known/jwks"));
 const send=(x:unknown,status=200)=>new Response(JSON.stringify(x),{status,headers:{
   "Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store",
@@ -27,7 +27,7 @@ const err=(reason:string,status=403)=>send({error:reason},status);
 const validUuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 function must(ok:unknown,reason:string):asserts ok{if(!ok)throw Error(reason);}
 async function baseGuard(){
- must(URL===ROOT&&KEY.length>35,"WRONG_PROJECT");
+ must(PROJECT_URL===ROOT&&KEY.length>35,"WRONG_PROJECT");
  const anchor=await db.from("schools").select("school_id").eq("school_id","STAGE38-FICTIONAL-001").maybeSingle();
  must(!anchor.error&&!!anchor.data,"QA_ANCHOR_MISSING");
  const {data:s,error:se}=await db.from("beagu_site_release_state_v1").select("*").eq("id",1).single();
