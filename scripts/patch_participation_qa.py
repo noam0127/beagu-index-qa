@@ -34,6 +34,12 @@ CSS = """
   margin:12px 0 17px;font-weight:650;word-break:keep-all;
 }
 #beaguParticipationMessage {min-height:1.5em}
+/* Keep the QA-only safety warning visible without swallowing pointer events. */
+#stage38-public-static-warning {pointer-events:none}
+@media (max-width:799px) {
+  /* Fixed safety banner can wrap onto two lines on narrow screens. */
+  #beaguLevelState {top:86px !important}
+}
 @media (min-width: 800px) {
   #beaguParticipationOverlay {
     padding:34px;
