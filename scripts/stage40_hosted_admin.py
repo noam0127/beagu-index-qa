@@ -19,6 +19,38 @@ STAGING="ycwuugggqbunlbwuzvbx"
 PROD="snvzwrexuqavnfvzgxqj"
 SUBPATH="/beagu-index-qa/"
 TEST_ROUTE="__stage40_auth__/admin.html"
+# Temporary clones retain the original staging API authorization code but accept
+# only the isolated github.io test origin. No existing API is modified.
+STAGE40_PROXY_JS = '''<script id="stage40-qa-api-proxy">
+(()=>{'use strict';
+ const host='https://ycwuugggqbunlbwuzvbx.supabase.co';
+ const prefix='/functions/v1/';
+ const routes={
+  'beagu-admin-access':'beagu-stage40-admin-access',
+  'beagu-admin-dashboard-v1':'beagu-stage40-admin-dashboard-v1',
+  'beagu-admin-members-v1':'beagu-stage40-admin-members-v1',
+  'beagu-2026-review-admin':'beagu-stage40-2026-review-admin',
+  'beagu-release-manager-v1':'beagu-stage40-release-manager-v1'
+ };
+ const original=window.fetch.bind(window);
+ window.fetch=(input,options)=>{
+  const value=input instanceof Request?input.url:String(input);
+  const target=new URL(value,location.href);
+  if(target.origin===host && target.pathname.startsWith(prefix)){
+   const slug=target.pathname.slice(prefix.length);
+   if(routes[slug]){
+    target.pathname=prefix+routes[slug];
+    if(input instanceof Request){
+      const adapted=new Request(target.href,input);
+      return original(adapted,options);
+    }
+    return original(target.href,options);
+   }
+  }
+  return original(input,options);
+ };
+})();
+</script>'''
 NOTICE=(
  '<aside role="alert" id="stage40-disposable-auth-notice" '
  'style="position:sticky;top:0;z-index:2147483644;padding:12px;'
@@ -66,7 +98,7 @@ def install(site:pathlib.Path,captured:pathlib.Path):
     rewritten=re.sub(r'(?i)<head(?:\s[^>]*)?>',
       lambda m:m.group(0)+'<base href="'+SUBPATH+'">'+
         '<meta name="robots" content="noindex,nofollow,noarchive">'+
-        '<meta http-equiv="Content-Security-Policy" content="'+CSP+'">',
+        '<meta http-equiv="Content-Security-Policy" content="'+CSP+'">'+STAGE40_PROXY_JS,
       rewritten,count=1)
     rewritten=re.sub(r'(?i)<body(?:\s[^>]*)?>',lambda m:m.group(0)+NOTICE,rewritten,count=1)
     # Fail-closed link navigation: prevent any public-domain changes or
