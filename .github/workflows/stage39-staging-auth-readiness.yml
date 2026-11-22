@@ -1,0 +1,39 @@
+name: Stage39 staging Auth readiness — negative only (NO DEPLOY)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "tests/stage39-staging-auth-negative.mjs"
+      - ".github/workflows/stage39-staging-auth-readiness.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  staging-auth-negative:
+    if: github.repository == 'noam0127/beagu-index-qa'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - name: Checkout independent QA repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install Node.js (no dependencies required)
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - name: Fail-closed auth/API/CORS staging negative matrix
+        run: |
+          node --check tests/stage39-staging-auth-negative.mjs
+          node tests/stage39-staging-auth-negative.mjs
+      - name: Archive status-only evidence (no credentials)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage39-staging-auth-negative-evidence
+          path: artifacts/stage39-auth-readiness/negative-paths.json
+          if-no-files-found: ignore
+          retention-days: 7
