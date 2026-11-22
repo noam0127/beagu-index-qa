@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/pages-static-rc.yml"
+      - "scripts/patch_participation_qa.py"
   workflow_dispatch:
 
 permissions:
