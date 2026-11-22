@@ -1,0 +1,191 @@
+name: Stage40 one-shot hosted Auth/MFA and automatic static restore (ISOLATED)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/stage40-hosted-auth-once.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: qa-pages-static
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.repository == 'noam0127/beagu-index-qa' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout isolated test harness (read-only token)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          path: qa
+      - name: Checkout reviewed release packager (not production main)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: noam0127/beagu-index
+          ref: 640f66c844a10bd894d4f6d31d0f4601c38d5b33
+          fetch-depth: 0
+          persist-credentials: false
+          path: source
+      - name: Build frozen RC package and two independently audited artifacts
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "640f66c844a10bd894d4f6d31d0f4601c38d5b33"
+          git fetch --no-tags origin +refs/heads/release/v1.1.0-rc.1:refs/remotes/origin/release/v1.1.0-rc.1
+          test "$(git rev-parse refs/remotes/origin/release/v1.1.0-rc.1)" = "5c95aadad971901a8222f83c52e93bf901a3aeb7"
+          python3 scripts/release-manager/build-offline-rc-bundle.py
+          python3 ../qa/scripts/stage40_hosted_admin.py capture _preview_standalone_site ../qa/.temporary-original-admin.html
+          python3 scripts/release-manager/build-stage38-static-mirror.py
+          python3 ../qa/scripts/patch_participation_qa.py _preview_standalone_site
+          cp -a _preview_standalone_site ../qa/.stage40-restored-site
+          cp -a _preview_standalone_site ../qa/.stage40-hosted-site
+          python3 ../qa/scripts/stage40_hosted_admin.py install ../qa/.stage40-hosted-site ../qa/.temporary-original-admin.html
+          python3 - <<'PY'
+          import json,pathlib
+          qa=pathlib.Path('../qa')
+          a=qa/'.stage40-hosted-site'
+          b=qa/'.stage40-restored-site'
+          m=json.loads((a/'stage40-hosted-auth-test-manifest.json').read_text())
+          assert m['source_sha']=='5c95aadad971901a8222f83c52e93bf901a3aeb7'
+          assert m['staging_ref']=='ycwuugggqbunlbwuzvbx'
+          assert not (b/'__stage40_auth__').exists()
+          assert not (b/'stage40-hosted-auth-test-manifest.json').exists()
+          for root in [a,b]:
+            assert not (root/'CNAME').exists()
+            for route in ['admin.html','index.html']:
+              text=(root/route).read_text(encoding='utf8')
+              assert 'stage38-cdn-static-guard' in text
+              assert "connect-src 'none'" in text
+          print('PASS: independent static-restoration artifact has no authentication route')
+          PY
+      - name: Upload one-shot authenticated QA route (not the public root)
+        uses: actions/upload-pages-artifact@v3
+        with:
+          name: stage40-hosted-auth-pages
+          path: qa/.stage40-hosted-site
+      - name: Upload independent exact static-only restore image
+        uses: actions/upload-pages-artifact@v3
+        with:
+          name: stage40-static-restore-pages
+          path: qa/.stage40-restored-site
+
+  deploy-hosted-qa:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy temporary staging-only hosted auth page
+        id: deployment
+        uses: actions/deploy-pages@v4
+        with:
+          artifact_name: stage40-hosted-auth-pages
+
+  run-real-hosted-auth:
+    needs: deploy-hosted-qa
+    if: needs.deploy-hosted-qa.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 14
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      STAGE40_AUTH_FIXTURE_FILE: /tmp/beagu-stage40-hosted-auth-test.json
+    steps:
+      - name: Checkout isolated test scripts only
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install fixed Playwright Chromium
+        run: |
+          set -euo pipefail
+          npm install --prefix .stage40-browser --no-save --no-package-lock playwright@1.56.1
+          .stage40-browser/node_modules/.bin/playwright install --with-deps chromium
+      - name: Create 2 disposable staging users with signed GitHub OIDC
+        run: |
+          set -euo pipefail
+          node scripts/stage40-oidc-fixture.cjs create
+          chmod 600 "$STAGE40_AUTH_FIXTURE_FILE"
+      - name: Real HTTPS desktop AAL1→TOTP AAL2, mobile forbidden role, revoked JWT
+        env:
+          NODE_PATH: ${{ github.workspace }}/.stage40-browser/node_modules
+        run: |
+          set -euo pipefail
+          node --check tests/stage40-hosted-staging-admin-e2e.cjs
+          node tests/stage40-hosted-staging-admin-e2e.cjs
+      - name: Always delete real synthetic staging identities and factors
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/stage40-oidc-fixture.cjs cleanup
+          test ! -e "$STAGE40_AUTH_FIXTURE_FILE"
+
+  restore-static-only:
+    needs: [build, deploy-hosted-qa, run-real-hosted-auth]
+    if: always() && needs.build.result == 'success' && needs.deploy-hosted-qa.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 14
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Restore no-auth QA Pages on success or FAILURE of browser test
+        id: deployment
+        uses: actions/deploy-pages@v4
+        with:
+          artifact_name: stage40-static-restore-pages
+
+  assert-restored:
+    needs: restore-static-only
+    if: always() && needs.restore-static-only.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    permissions:
+      contents: read
+    steps:
+      - name: Prove original QA Pages restored, no temporary auth path
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,time,urllib.request,urllib.error
+          base='https://noam0127.github.io/beagu-index-qa/'
+          request=lambda name: urllib.request.Request(base+name,headers={'Cache-Control':'no-cache'})
+          for i in range(15):
+            with urllib.request.urlopen(request('admin.html'),timeout=20) as r:
+              body=r.read().decode('utf8')
+              assert 'stage38-cdn-static-guard' in body
+              assert "connect-src 'none'" in body
+            with urllib.request.urlopen(request('stage38-static-mirror.json'),timeout=20) as r:
+              manifest=json.loads(r.read())
+              assert manifest['source_sha']=='5c95aadad971901a8222f83c52e93bf901a3aeb7'
+              assert manifest['login_enabled'] is False
+            try:
+              with urllib.request.urlopen(request('stage40-hosted-auth-test-manifest.json'),timeout=10) as r:
+                status=r.status
+            except urllib.error.HTTPError as err:
+              status=err.code
+            if status==404:
+              print('PASS: hosted test path removed; Pages static-only release safely restored')
+              break
+            if i==14:raise RuntimeError('Temporary hosted auth manifest still publicly served')
+            time.sleep(4)
+          PY
