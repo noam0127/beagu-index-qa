@@ -121,6 +121,23 @@ async function run(payload:any,action:string,input:any){
    history:history.map((h:any)=>h.action),staging_sha:state.staging_sha,
    production_sha:state.production_sha};
  }
+ if(action==="recover_after_verified_restore"){
+  // The caller must have completed the independent Pages A HTTPS verification.
+  // This branch exists only to repair QA release tables after a failed test.
+  if(input.restored!==true || (state.staging_sha!==null&&state.staging_sha!==sha)||
+     jobs.length>2||history.length>2)fail("RECOVERY_REJECTED");
+  if(state.staging_sha!==null)
+   check(await db.from("beagu_site_release_state_v1").update({
+    staging_sha:null,staging_version:null,updated_at:new Date().toISOString()
+   }).eq("id",1).eq("staging_sha",sha).select("id").single(),"RECOVERY_RESET");
+  for(const row of history)check(await db.from("beagu_site_release_history_v1")
+    .delete().eq("job_id",row.job_id).select("job_id").single(),"RECOVERY_HISTORY_DELETE");
+  for(const row of jobs)check(await db.from("beagu_site_release_jobs_v1")
+    .delete().eq("id",row.id).select("id").single(),"RECOVERY_JOB_DELETE");
+  const after=await records();
+  if(after.jobs.length||after.history.length)fail("RECOVERY_INCOMPLETE");
+  return {clean:true,recovered:true,production_unchanged:true};
+ }
  if(action==="cleanup"){
   // Cleanup only this workflow's records, never an unrelated job.
   if(state.staging_sha!==null||jobs.some((j:any)=>j.status==="running")||
