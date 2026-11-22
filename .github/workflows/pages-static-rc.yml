@@ -85,3 +85,45 @@ jobs:
       - name: Deploy to QA-only GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Verify public Pages responses and static-only safety
+        shell: bash
+        env:
+          QA_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          python3 - <<'PY'
+          import json, os, time, urllib.request
+          from urllib.parse import urljoin, urlparse
+          base=os.environ['QA_URL'].rstrip('/')+'/'
+          assert base=='https://noam0127.github.io/beagu-index-qa/',base
+          def fetch(path):
+              url=urljoin(base,path)
+              assert url.startswith(base),url
+              with urllib.request.urlopen(urllib.request.Request(url,headers={'Cache-Control':'no-cache'}), timeout=20) as r:
+                  assert r.status==200,(url,r.status)
+                  final=r.url
+                  assert final.startswith(base),(url,final)
+                  return r.read().decode('utf-8')
+          for attempt in range(12):
+              try:
+                  page=fetch('index.html')
+                  manifest=json.loads(fetch('stage38-static-mirror.json'))
+                  assert 'stage38-public-static-warning' in page
+                  assert 'connect-src \\'none\\'' in page
+                  assert 'form-action \\'none\\'' in page
+                  assert manifest['source_sha']=='5c95aadad971901a8222f83c52e93bf901a3aeb7'
+                  assert manifest['login_enabled'] is False
+                  assert manifest['api_calls_enabled'] is False
+                  assert manifest['supabase_auth_mfa_browser_e2e_passed'] is False
+                  for route in ['admin.html','admin-updates.html','result.html','js/challenge.html']:
+                      body=fetch(route)
+                      assert 'stage38-public-static-warning' in body,route
+                      assert 'connect-src \\'none\\'' in body,route
+                      assert 'form-action \\'none\\'' in body,route
+                  print('PASS: hosted exact-RC Pages routes + credential/network block')
+                  break
+              except Exception as exc:
+                  if attempt==11:raise
+                  print('Pages propagation check',attempt+1,'of 12:',str(exc))
+                  time.sleep(5)
+          PY
