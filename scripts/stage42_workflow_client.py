@@ -25,7 +25,7 @@ def perform(action):
   if FILE.exists():
    raise RuntimeError("do not reuse prior QA credentials")
   email="qa-stage42-"+secrets.token_hex(16)+"@example.invalid"
-  password=secrets.token_hex(48)+"Aa1!"
+  password=secrets.token_hex(32)+"Aa1!"
   FILE.write_text(json.dumps({"admin_email":email,"admin_password":password})+"\n",encoding="utf8")
   FILE.chmod(0o600)
   print("PASS ephemeral QA fixture generated locally (no secrets printed)")
