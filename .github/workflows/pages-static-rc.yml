@@ -1,0 +1,85 @@
+name: QA static Pages — pinned v1.1.0 RC (NO AUTH)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/pages-static-rc.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: qa-pages-static
+  cancel-in-progress: false
+
+jobs:
+  package-and-deploy-static-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout isolated QA repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          path: qa
+
+      - name: Checkout immutable, reviewed packaging source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: noam0127/beagu-index
+          ref: 640f66c844a10bd894d4f6d31d0f4601c38d5b33
+          fetch-depth: 0
+          persist-credentials: false
+          path: source
+
+      - name: Produce authenticated-API-disabled, pinned-RC static site
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "640f66c844a10bd894d4f6d31d0f4601c38d5b33"
+          git fetch --no-tags origin             +refs/heads/release/v1.1.0-rc.1:refs/remotes/origin/release/v1.1.0-rc.1
+          test "$(git rev-parse refs/remotes/origin/release/v1.1.0-rc.1)" =             "5c95aadad971901a8222f83c52e93bf901a3aeb7"
+          python3 scripts/release-manager/build-offline-rc-bundle.py
+          python3 scripts/release-manager/build-stage38-static-mirror.py
+          python3 - <<'PY'
+          import json,pathlib,hashlib
+          p=pathlib.Path('_preview_standalone_site')
+          manifest=json.loads((p/'stage38-release-manifest.json').read_text())
+          mirror=json.loads((p/'stage38-static-mirror.json').read_text())
+          assert manifest['source_sha']=='5c95aadad971901a8222f83c52e93bf901a3aeb7'
+          assert manifest['supabase_project_ref']=='ycwuugggqbunlbwuzvbx'
+          assert mirror['source_sha']==manifest['source_sha']
+          assert mirror['login_enabled'] is False and mirror['api_calls_enabled'] is False
+          assert mirror['supabase_auth_mfa_browser_e2e_passed'] is False
+          assert not (p/'CNAME').exists()
+          # GitHub Pages project subpath works with relative links.
+          required=['index.html','admin.html','admin-updates.html','result.html','js/challenge.html']
+          for rel in required:
+              content=(p/rel).read_text()
+              assert "stage38-public-static-warning" in content,rel
+              assert "connect-src 'none'" in content,rel
+              assert "form-action 'none'" in content,rel
+          print('PASS: exact RC, independent staging ref, NO AUTH, no API/forms and no CNAME')
+          PY
+          touch _preview_standalone_site/.nojekyll
+          rm -f _preview_standalone_site/CNAME
+
+      - name: Configure GitHub Pages (isolated QA repository only)
+        uses: actions/configure-pages@v5
+
+      - name: Upload sanitized static site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: source/_preview_standalone_site
+
+      - name: Deploy to QA-only GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
