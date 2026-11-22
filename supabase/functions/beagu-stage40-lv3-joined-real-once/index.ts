@@ -10,11 +10,11 @@ const ORIGIN="https://"+STAGE+".supabase.co";
 const REPO="noam0127/beagu-index-qa";
 const WORKFLOW=REPO+"/.github/workflows/stage40-lv3-joined-real-once.yml@refs/heads/main";
 const JWKS=createRemoteJWKSet(new URL("https://token.actions.githubusercontent.com/.well-known/jwks"));
-const URL=Deno.env.get("SUPABASE_URL")||"";
+const PROJECT_URL=Deno.env.get("SUPABASE_URL")||"";
 const KEY=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")||"";
 const ANON=Deno.env.get("SUPABASE_ANON_KEY")||"";
-const admin=createClient(URL,KEY,{auth:{persistSession:false,autoRefreshToken:false}});
-const publicAuth=createClient(URL,ANON,{auth:{persistSession:false,autoRefreshToken:false}});
+const admin=createClient(PROJECT_URL,KEY,{auth:{persistSession:false,autoRefreshToken:false}});
+const publicAuth=createClient(PROJECT_URL,ANON,{auth:{persistSession:false,autoRefreshToken:false}});
 const h=(bytes:Uint8Array)=>[...bytes].map(b=>b.toString(16).padStart(2,"0")).join("");
 const rand=()=>h(crypto.getRandomValues(new Uint8Array(32)));
 const hash=async(s:string)=>h(new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(s))));
@@ -51,7 +51,7 @@ async function count(table:string){
  return count||0;
 }
 async function journey(){
- gate(URL===ORIGIN&&KEY.length>35&&ANON.length>35,"QA_PROJECT_MISMATCH");
+ gate(PROJECT_URL===ORIGIN&&KEY.length>35&&ANON.length>35,"QA_PROJECT_MISMATCH");
  const marker=await admin.from("schools").select("school_id").eq("school_id","STAGE38-FICTIONAL-001").maybeSingle();
  gate(!marker.error&&!!marker.data,"QA_ANCHOR_MISSING");
  const pre=await admin.auth.admin.listUsers({page:1,perPage:1});
@@ -145,7 +145,7 @@ async function journey(){
       await count("beagu_postit_member_accounts")===0;
   }catch(e){cleaned=false;reason=reason==="NONE"?"CLEANUP_FAILED":reason;}
  }
- const ok=checks===17&&reason==="NONE"&&cleaned;
+ const ok=checks===19&&reason==="NONE"&&cleaned;
  return {status:ok?"PASS":"BLOCKED",checks_passed:checks,
   reason:ok?"NONE":reason,cleanup_ok:cleaned,
   scope:"real hosted earned code Lv2 (synthetic referral credit) -> GoTrue signup confirmation -> actual API device bind -> Lv3 -> revocation. No inbox click, real respondent or browser UI.",
