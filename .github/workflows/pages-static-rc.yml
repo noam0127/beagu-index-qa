@@ -1,22 +1,19 @@
-name: QA static Pages — pinned v1.1.0 RC (NO AUTH)
-
+name: QA static Pages — selectable immutable site snapshots (NO AUTH)
 on:
   push:
     branches: [main]
     paths:
-      - ".github/workflows/pages-static-rc.yml"
-      - "scripts/patch_participation_qa.py"
+      - '.github/workflows/pages-static-rc.yml'
+      - 'scripts/build-qa-snapshot.py'
+      - 'qa-snapshot.json'
   workflow_dispatch:
-
 permissions:
   contents: read
   pages: write
   id-token: write
-
 concurrency:
   group: qa-pages-static
   cancel-in-progress: false
-
 jobs:
   package-and-deploy-static-only:
     runs-on: ubuntu-24.04
@@ -25,126 +22,62 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Checkout isolated QA repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
           path: qa
-
-      - name: Checkout immutable, reviewed packaging source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Checkout production baseline read-only
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: noam0127/beagu-index
-          ref: 640f66c844a10bd894d4f6d31d0f4601c38d5b33
+          ref: 36c68c8394a77a94541a2ad04a83db7242639c0c
           fetch-depth: 0
           persist-credentials: false
           path: source
-
-      - name: Produce authenticated-API-disabled, pinned-RC static site
-        working-directory: source
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD)" = "640f66c844a10bd894d4f6d31d0f4601c38d5b33"
-          git fetch --no-tags origin             +refs/heads/release/v1.1.0-rc.1:refs/remotes/origin/release/v1.1.0-rc.1
-          test "$(git rev-parse refs/remotes/origin/release/v1.1.0-rc.1)" =             "5c95aadad971901a8222f83c52e93bf901a3aeb7"
-          python3 scripts/release-manager/build-offline-rc-bundle.py
-          python3 scripts/release-manager/build-stage38-static-mirror.py
-          python3 ../qa/scripts/patch_participation_qa.py _preview_standalone_site
-          python3 - <<'PY'
-          import json,pathlib,hashlib
-          p=pathlib.Path('_preview_standalone_site')
-          manifest=json.loads((p/'stage38-release-manifest.json').read_text())
-          mirror=json.loads((p/'stage38-static-mirror.json').read_text())
-          assert manifest['source_sha']=='5c95aadad971901a8222f83c52e93bf901a3aeb7'
-          assert manifest['supabase_project_ref']=='ycwuugggqbunlbwuzvbx'
-          assert mirror['source_sha']==manifest['source_sha']
-          assert mirror['login_enabled'] is False and mirror['api_calls_enabled'] is False
-          assert mirror['supabase_auth_mfa_browser_e2e_passed'] is False
-          qa=json.loads((p/'qa-participation-ui-manifest.json').read_text())
-          assert qa['source_sha']==manifest['source_sha']
-          assert qa['real_codes_allowed'] is False
-          assert qa['login_enabled'] is False and qa['api_calls_enabled'] is False
-          assert 'index.html' in qa['modified_pages']
-          for relative in qa['modified_pages']:
-              html=(p/relative).read_text(encoding='utf8')
-              assert 'beagu-qa-participation-desktop-css' in html,relative
-              assert 'beagu-qa-participation-demo-js' in html,relative
-              assert 'button.type=\'button\'' in html,relative
-              assert "connect-src 'none'" in html,relative
-              assert "form-action 'none'" in html,relative
-          assert not (p/'CNAME').exists()
-          # GitHub Pages project subpath works with relative links.
-          required=['index.html','admin.html','admin-updates.html','result.html','js/challenge.html']
-          for rel in required:
-              content=(p/rel).read_text()
-              assert "stage38-public-static-warning" in content,rel
-              assert "connect-src 'none'" in content,rel
-              assert "form-action 'none'" in content,rel
-          print('PASS: exact RC, independent staging ref, NO AUTH, no API/forms and no CNAME')
-          PY
-          touch _preview_standalone_site/.nojekyll
-          rm -f _preview_standalone_site/CNAME
-
-      - name: Configure GitHub Pages (isolated QA repository only)
+      - name: Package approved public site assets
+        run: python3 qa/scripts/build-qa-snapshot.py source qa/qa-snapshot.json site
+      - name: Configure independent QA Pages
         uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
         with:
-          enablement: true
-
-      - name: Upload sanitized static site
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: source/_preview_standalone_site
-
-      - name: Deploy to QA-only GitHub Pages
+          path: site
+      - name: Wait for artifact index
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for attempt in $(seq 1 15); do
+            count="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100" --jq '[.artifacts[] | select(.name == "github-pages" and .expired == false)] | length')"
+            if [ "$count" = 1 ]; then sleep 4; exit 0; fi
+            sleep 5
+          done
+          exit 1
+      - name: Deploy only to QA repository
         id: deployment
         uses: actions/deploy-pages@v4
-
-      - name: Verify public Pages responses and static-only safety
-        shell: bash
+      - name: Check HTTPS pinned source and safe configuration
         env:
           QA_URL: ${{ steps.deployment.outputs.page_url }}
         run: |
           python3 - <<'PY'
-          import json, os, time, urllib.request
-          from urllib.parse import urljoin, urlparse
+          import json,time,os,urllib.request,pathlib
           base=os.environ['QA_URL'].rstrip('/')+'/'
           assert base=='https://noam0127.github.io/beagu-index-qa/',base
-          def fetch(path):
-              url=urljoin(base,path)
-              assert url.startswith(base),url
-              with urllib.request.urlopen(urllib.request.Request(url,headers={'Cache-Control':'no-cache'}), timeout=20) as r:
-                  assert r.status==200,(url,r.status)
-                  final=r.url
-                  assert final.startswith(base),(url,final)
-                  return r.read().decode('utf-8')
-          for attempt in range(12):
+          expected=json.loads(pathlib.Path('qa/qa-snapshot.json').read_text())
+          def get(path):
+              with urllib.request.urlopen(urllib.request.Request(base+path+'?qa='+expected['source_sha'][:12],headers={'Cache-Control':'no-cache'}),timeout=20) as r:
+                  assert r.url.startswith(base) and r.status==200
+                  return r.read().decode()
+          for i in range(12):
               try:
-                  page=fetch('index.html')
-                  manifest=json.loads(fetch('stage38-static-mirror.json'))
-                  assert 'stage38-public-static-warning' in page
-                  assert "connect-src " + chr(39) + "none" + chr(39) in page
-                  assert "form-action " + chr(39) + "none" + chr(39) in page
-                  assert manifest['source_sha']=='5c95aadad971901a8222f83c52e93bf901a3aeb7'
-                  assert manifest['login_enabled'] is False
-                  assert manifest['api_calls_enabled'] is False
-                  assert manifest['supabase_auth_mfa_browser_e2e_passed'] is False
-                  ui=json.loads(fetch('qa-participation-ui-manifest.json'))
-                  assert ui['source_sha']==manifest['source_sha']
-                  assert ui['real_codes_allowed'] is False
-                  assert ui['login_enabled'] is False and ui['api_calls_enabled'] is False
-                  assert 'beagu-qa-participation-desktop-css' in page
-                  assert 'beagu-qa-participation-demo-js' in page
-                  assert "connect-src 'none'" in page
-                  for route in ['admin.html','admin-updates.html','result.html','js/challenge.html']:
-                      body=fetch(route)
-                      assert 'stage38-public-static-warning' in body,route
-                      assert "connect-src " + chr(39) + "none" + chr(39) in body,route
-                      assert "form-action " + chr(39) + "none" + chr(39) in body,route
-                  print('PASS: hosted exact-RC Pages routes + credential/network block')
+                  m=json.loads(get('qa-release.json'))
+                  assert m['source_sha']==expected['source_sha'] and m['version']==expected['version']
+                  assert m['production_access'] is False and m['real_credentials_allowed'] is False
+                  for p in ('index.html','search.html','admin.html','challenge.html','teacher-volleyball.html'):
+                      html=get(p)
+                      assert "connect-src 'self'" in html and "form-action 'none'" in html and 'qa-snapshot-safety' in html,p
+                  print('PASS: exact source version and isolated QA HTTPS',m['source_sha'],m['version'])
                   break
-              except Exception as exc:
-                  if attempt==11:raise
-                  print('Pages propagation check',attempt+1,'of 12:',str(exc))
+              except Exception:
+                  if i==11:raise
                   time.sleep(5)
           PY
