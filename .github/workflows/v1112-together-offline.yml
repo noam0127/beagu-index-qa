@@ -19,11 +19,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: noam0127/beagu-index
-          ref: 'e7a1c0edebbd2832c5760a2a804444b27dafaad3'
+          ref: '416c46003af4935465eea1e0dd9bf3d7d37e4c68'
           path: candidate
           persist-credentials: false
       - name: Verify pinned source
-        run: test "$(git -C candidate rev-parse HEAD)" = 'e7a1c0edebbd2832c5760a2a804444b27dafaad3'
+        run: test "$(git -C candidate rev-parse HEAD)" = '416c46003af4935465eea1e0dd9bf3d7d37e4c68'
       - name: Static and simulated API regressions (no live requests)
         working-directory: candidate
         run: |
